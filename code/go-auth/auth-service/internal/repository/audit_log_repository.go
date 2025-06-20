@@ -124,19 +124,24 @@ func (r *PostgreSQLAuditLogRepository) Create(ctx context.Context, log *domain.A
 	}
 	log.CreatedAt = now
 
-	// Serialize metadata to JSON
-	var metadataJSON []byte
-	var err error
+	// Serialize metadata to JSON for JSONB storage
+	var metadataJSON interface{}
 	if len(log.Metadata) > 0 {
-		metadataJSON, err = json.Marshal(log.Metadata)
+		// Marshal non-empty metadata to JSON
+		jsonBytes, err := json.Marshal(log.Metadata)
 		if err != nil {
 			r.logger.WithFields(logrus.Fields{
 				"event_type": log.EventType,
 				"user_id":    log.UserID,
 				"error":      err.Error(),
+				"metadata":   log.Metadata,
 			}).Error("failed to serialize audit log metadata")
 			return nil, domain.ErrInvalidInput
 		}
+		metadataJSON = string(jsonBytes)
+	} else {
+		// Use NULL for empty metadata to work better with JSONB
+		metadataJSON = nil
 	}
 
 	// SQL query for inserting new audit log
@@ -150,7 +155,7 @@ func (r *PostgreSQLAuditLogRepository) Create(ctx context.Context, log *domain.A
 		) RETURNING id, created_at`
 
 	// Execute the insertion with proper error handling
-	err = r.db.QueryRowContext(
+	err := r.db.QueryRowContext(
 		ctx,
 		query,
 		log.ID,

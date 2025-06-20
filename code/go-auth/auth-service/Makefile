@@ -30,7 +30,8 @@ endif
 # Docker and binary variables
 BINARY_NAME=auth-service
 DOCKER_IMAGE=auth-service
-DOCKER_TAG := $(VERSION)
+# Sanitize version for Docker tag (replace + with - since + is not allowed in Docker tags)
+DOCKER_TAG := $(shell echo "$(VERSION)" | sed 's/+/-/g')
 
 # Go build flags with comprehensive version info
 LDFLAGS := -ldflags "\
@@ -300,10 +301,10 @@ docker-build: version-bump-build ## Build Docker image with version information
 		--build-arg BUILD_HOST=$(BUILD_HOST) \
 		--build-arg SEMANTIC_VERSION=$(SEMANTIC_VERSION) \
 		--build-arg BUILD_NUMBER=$(BUILD_NUMBER) \
-		-t $(DOCKER_IMAGE):$(VERSION) \
+		-t $(DOCKER_IMAGE):$(DOCKER_TAG) \
 		-t $(DOCKER_IMAGE):latest \
 		.
-	@echo "$(GREEN)Docker image built: $(DOCKER_IMAGE):$(VERSION)$(NC)"
+	@echo "$(GREEN)Docker image built: $(DOCKER_IMAGE):$(DOCKER_TAG)$(NC)"
 	@echo "$(CYAN)Image also tagged as: $(DOCKER_IMAGE):latest$(NC)"
 
 .PHONY: docker-run
@@ -314,7 +315,7 @@ docker-run: ## Run Docker container
 .PHONY: docker-push
 docker-push: docker-build ## Push Docker image to registry
 	@echo "$(YELLOW)Pushing Docker image...$(NC)"
-	docker push $(DOCKER_IMAGE):$(VERSION)
+	docker push $(DOCKER_IMAGE):$(DOCKER_TAG)
 	docker push $(DOCKER_IMAGE):latest
 	@echo "$(GREEN)Docker image pushed$(NC)"
 
@@ -466,6 +467,7 @@ install-tools: ## Install development tools
 	go install github.com/securecodewarrior/gosec/v2/cmd/gosec@latest
 	go install golang.org/x/vuln/cmd/govulncheck@latest
 	go install github.com/swaggo/swag/cmd/swag@latest
+	go install -tags 'postgres' github.com/golang-migrate/migrate/v4/cmd/migrate@latest
 	@echo "$(BLUE)Optional: Install swagger CLI for validation with:$(NC)"
 	@echo "  go install github.com/go-swagger/go-swagger/cmd/swagger@latest"
 	@echo "$(GREEN)Development tools installed$(NC)"

@@ -89,7 +89,7 @@ type ResetPasswordRequest struct {
 // - Email should match the original reset request
 type ConfirmResetPasswordRequest struct {
 	// Token is the secure token sent via email
-	Token string `json:"token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+	Token string `json:"token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 
 	// Email is the user's email address for verification
 	Email string `json:"email" validate:"required,email" example:"user@example.com"`

@@ -275,6 +275,20 @@ func (s *AuthService) ConfirmResetPassword(ctx context.Context, req *domain.Conf
 		"user_agent": userAgent,
 	}).Info("Password reset confirmation attempt")
 
+	// Debug logging to help troubleshoot token issues
+	s.logger.WithFields(map[string]interface{}{
+		"token_present": req.Token != "",
+		"token_length":  len(req.Token),
+		"email_present": req.Email != "",
+	}).Debug("Password reset confirmation request details")
+
+	// Validate that required fields are present
+	if req.Token == "" {
+		s.logger.Error("Password reset token is empty in request")
+		s.auditLogFailure(ctx, nil, "user.password.reset.confirm.failure", "Empty reset token", clientIP, userAgent, domain.ErrInvalidToken)
+		return domain.ErrInvalidToken
+	}
+
 	// Validate new password strength
 	if err := s.validatePasswordStrength(req.NewPassword); err != nil {
 		s.auditLogFailure(ctx, nil, "user.password.reset.confirm.failure", "New password validation failed", clientIP, userAgent, err)

@@ -135,9 +135,9 @@ func (r *PostgreSQLPasswordResetTokenRepository) Create(ctx context.Context, tok
 	// Uses RETURNING clause to get the created record back
 	query := `
 		INSERT INTO password_reset_tokens (
-			id, user_id, token_hash, email, expires_at, is_used, created_at
+			id, user_id, token_hash, email, ip_address, expires_at, is_used, created_at
 		) VALUES (
-			$1, $2, $3, $4, $5, $6, $7
+			$1, $2, $3, $4, $5, $6, $7, $8
 		) RETURNING id, created_at`
 
 	// Execute the insertion with proper error handling
@@ -148,6 +148,7 @@ func (r *PostgreSQLPasswordResetTokenRepository) Create(ctx context.Context, tok
 		token.UserID,
 		hashedToken,
 		token.Email,
+		token.IPAddress, // Include the IP address parameter
 		token.ExpiresAt,
 		false, // New tokens are never used initially
 		token.CreatedAt,
@@ -220,7 +221,7 @@ func (r *PostgreSQLPasswordResetTokenRepository) GetByToken(ctx context.Context,
 	// SQL query that automatically excludes expired and used tokens
 	// Uses current timestamp to check expiration
 	query := `
-		SELECT id, user_id, token_hash, email, expires_at, is_used, created_at
+		SELECT id, user_id, token_hash, email, ip_address, expires_at, is_used, created_at
 		FROM password_reset_tokens 
 		WHERE token_hash = $1 
 		  AND expires_at > NOW() 
@@ -232,6 +233,7 @@ func (r *PostgreSQLPasswordResetTokenRepository) GetByToken(ctx context.Context,
 		&token.UserID,
 		&token.Token, // This will be the hash, not the original token
 		&token.Email,
+		&token.IPAddress, // Include IP address in scan
 		&token.ExpiresAt,
 		&token.IsUsed,
 		&token.CreatedAt,

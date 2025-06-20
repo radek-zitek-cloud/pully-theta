@@ -255,11 +255,11 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 // @Tags         auth
 // @Accept       json
 // @Produce      json
-// @Param        reset  body      map[string]string       true  "Password reset confirmation data"
-// @Success      200    {object}  map[string]interface{}  "Password reset successfully"
-// @Failure      400    {object}  domain.ErrorResponse    "Bad request - invalid token or validation errors"
-// @Failure      401    {object}  domain.ErrorResponse    "Unauthorized - token not found or already used"
-// @Failure      500    {object}  domain.ErrorResponse    "Internal server error"
+// @Param        reset  body      domain.ConfirmResetPasswordRequest  true  "Password reset confirmation data"
+// @Success      200    {object}  domain.SuccessResponse              "Password reset successfully"
+// @Failure      400    {object}  domain.ErrorResponse                "Bad request - invalid token or validation errors"
+// @Failure      401    {object}  domain.ErrorResponse                "Unauthorized - token not found or already used"
+// @Failure      500    {object}  domain.ErrorResponse                "Internal server error"
 // @Router       /auth/password/reset [post]
 func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
@@ -280,6 +280,15 @@ func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Invalid request format", err, requestID)
 		return
 	}
+
+	// Log parsed request details for debugging
+	h.logger.WithFields(map[string]interface{}{
+		"request_id":    requestID,
+		"token_present": req.Token != "",
+		"token_length":  len(req.Token),
+		"email":         req.Email,
+		"has_password":  req.NewPassword != "",
+	}).Debug("Parsed confirm reset password request")
 
 	// Validate request using struct tags
 	if err := h.validateStruct(&req); err != nil {
