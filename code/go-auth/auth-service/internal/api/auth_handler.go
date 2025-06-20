@@ -75,7 +75,7 @@ func NewAuthHandler(authService *service.AuthService, logger *logrus.Logger) (*A
 //
 // @Summary      Register a new user
 // @Description  Create a new user account with email, password, and profile information
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
 // @Param        user  body      domain.RegisterRequest  true  "User registration data"
@@ -186,7 +186,7 @@ func (h *AuthHandler) Register(c *gin.Context) {
 //
 // @Summary      Authenticate user
 // @Description  Authenticate user with email and password, returns JWT tokens
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
 // @Param        credentials  body      domain.LoginRequest   true  "User login credentials"
@@ -321,11 +321,11 @@ func (h *AuthHandler) Login(c *gin.Context) {
 //
 // @Summary      Logout user
 // @Description  Logout user and revoke refresh tokens to invalidate session. No request body required - only Authorization header with Bearer token.
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200   {object}  map[string]interface{}  "Successfully logged out"
+// @Success      200   {object}  domain.SuccessResponse  "Successfully logged out"
 // @Failure      401   {object}  domain.ErrorResponse    "Unauthorized - invalid token"
 // @Failure      500   {object}  domain.ErrorResponse    "Internal server error"
 // @Router       /auth/logout [post]
@@ -420,14 +420,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 //
 // @Summary      Refresh access token
 // @Description  Refresh access token using a valid refresh token
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
-// @Param        refresh  body      map[string]string       true  "Refresh token data"
-// @Success      200      {object}  domain.LoginResponse    "New access token generated"
-// @Failure      400      {object}  domain.ErrorResponse    "Bad request - invalid format"
-// @Failure      401      {object}  domain.ErrorResponse    "Unauthorized - invalid or expired refresh token"
-// @Failure      500      {object}  domain.ErrorResponse    "Internal server error"
+// @Param        request  body      domain.RefreshTokenRequest  true  "Refresh token data"
+// @Success      200      {object}  domain.LoginResponse        "New access token generated"
+// @Failure      400      {object}  domain.ErrorResponse        "Bad request - invalid format"
+// @Failure      401      {object}  domain.ErrorResponse        "Unauthorized - invalid or expired refresh token"
+// @Failure      500      {object}  domain.ErrorResponse        "Internal server error"
 // @Router       /auth/refresh [post]
 func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	requestID := h.getRequestID(c)

@@ -331,6 +331,76 @@
             },
             "description": "**Logout user and revoke tokens**\n\n### Purpose\nSecurely logs out the user by revoking their access and refresh tokens.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Logout Process\n1. Validates access token\n2. Revokes/blacklists current access token\n3. Revokes all refresh tokens for the user\n4. Logs logout event for audit trail\n5. Clears any server-side session data\n\n### Security Features\n- Token revocation and blacklisting\n- Complete session termination\n- Audit logging for security monitoring\n- Prevents token reuse after logout\n\n### Success Response (200)\n- Confirmation message\n- Success status indicator\n\n### Error Responses\n- **401**: Invalid or expired access token\n- **500**: Internal server error"
           }
+        },
+        {
+          "name": "Logout from All Devices",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for logout all devices endpoint",
+                  "pm.test('Logout from all devices successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Success confirmation returned', function() {",
+                  "        pm.expect(response).to.have.property('message');",
+                  "        pm.expect(response.success).to.be.true;",
+                  "    });",
+                  "    ",
+                  "    pm.test('Response includes timestamp and request ID', function() {",
+                  "        pm.expect(response).to.have.property('timestamp');",
+                  "        pm.expect(response).to.have.property('request_id');",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Successfully logged out from all devices');",
+                  "    ",
+                  "    // Clear stored tokens since they're now invalid",
+                  "    pm.environment.set('access_token', '');",
+                  "    pm.environment.set('refresh_token', '');",
+                  "} else if (pm.response.code === 401) {",
+                  "    pm.test('Authentication error handled correctly', function() {",
+                  "        const response = pm.response.json();",
+                  "        pm.expect(response).to.have.property('error');",
+                  "        pm.expect(response).to.have.property('message');",
+                  "    });",
+                  "    console.log('❌ Authentication failed for logout-all');",
+                  "} else {",
+                  "    console.log('❌ Logout from all devices failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout-all",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout-all"]
+            },
+            "description": "**Logout from all devices and revoke all tokens**\n\n### Purpose\nSecurely logs out the user from ALL devices by revoking all refresh tokens associated with their account. This is useful for security incidents or when a user wants to terminate all active sessions.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Logout All Process\n1. Validates access token and extracts user ID\n2. Revokes ALL refresh tokens for the user across all devices\n3. Logs security event for audit trail\n4. Immediately invalidates all active sessions\n5. Forces re-authentication on all devices\n\n### Security Features\n- Complete account session termination\n- Useful for security breach response\n- Comprehensive audit logging\n- Immediate effect across all user devices\n- No request body required - operates on authenticated user\n\n### Use Cases\n- Security incident response\n- Suspicious account activity\n- User-initiated \"sign out everywhere\"\n- Account compromise mitigation\n- Device theft or loss response\n\n### Success Response (200)\n- Confirmation message indicating all devices logged out\n- Success status indicator\n- Request ID for tracking\n- Timestamp of operation\n\n### Error Responses\n- **401**: Invalid or expired access token\n- **500**: Internal server error"
+          }
         }
       ]
     },

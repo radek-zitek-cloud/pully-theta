@@ -48,15 +48,15 @@ import (
 //
 // @Summary      Change user password
 // @Description  Change the current user's password with current password verification
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Param        password  body      map[string]string       true  "Password change data"
-// @Success      200       {object}  map[string]interface{}  "Password changed successfully"
-// @Failure      400       {object}  domain.ErrorResponse    "Bad request - validation errors"
-// @Failure      401       {object}  domain.ErrorResponse    "Unauthorized - invalid current password"
-// @Failure      500       {object}  domain.ErrorResponse    "Internal server error"
+// @Param        request  body      domain.ChangePasswordRequest  true  "Password change data"
+// @Success      200      {object}  domain.SuccessResponse        "Password changed successfully"
+// @Failure      400      {object}  domain.ErrorResponse          "Bad request - validation errors"
+// @Failure      401      {object}  domain.ErrorResponse          "Unauthorized - invalid current password"
+// @Failure      500      {object}  domain.ErrorResponse          "Internal server error"
 // @Router       /auth/password/change [put]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
@@ -153,14 +153,14 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 //
 // @Summary      Request password reset
 // @Description  Request a password reset email with a secure reset token
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
-// @Param        email  body      map[string]string       true  "Email address for password reset"
-// @Success      200    {object}  map[string]interface{}  "Password reset email sent (always returns success for privacy)"
-// @Failure      400    {object}  domain.ErrorResponse    "Bad request - invalid email format"
-// @Failure      429    {object}  domain.ErrorResponse    "Too many requests - rate limit exceeded"
-// @Failure      500    {object}  domain.ErrorResponse    "Internal server error"
+// @Param        request  body      domain.ResetPasswordRequest  true  "Email address for password reset"
+// @Success      200      {object}  domain.SuccessResponse       "Password reset email sent (always returns success for privacy)"
+// @Failure      400      {object}  domain.ErrorResponse         "Bad request - invalid email format"
+// @Failure      429      {object}  domain.ErrorResponse         "Too many requests - rate limit exceeded"
+// @Failure      500      {object}  domain.ErrorResponse         "Internal server error"
 // @Router       /auth/password/forgot [post]
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
@@ -252,14 +252,14 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 //
 // @Summary      Confirm password reset
 // @Description  Reset password using a valid reset token received via email
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
-// @Param        reset  body      domain.ConfirmResetPasswordRequest  true  "Password reset confirmation data"
-// @Success      200    {object}  domain.SuccessResponse              "Password reset successfully"
-// @Failure      400    {object}  domain.ErrorResponse                "Bad request - invalid token or validation errors"
-// @Failure      401    {object}  domain.ErrorResponse                "Unauthorized - token not found or already used"
-// @Failure      500    {object}  domain.ErrorResponse                "Internal server error"
+// @Param        request  body      domain.ConfirmResetPasswordRequest  true  "Password reset confirmation data"
+// @Success      200      {object}  domain.SuccessResponse              "Password reset successfully"
+// @Failure      400      {object}  domain.ErrorResponse                "Bad request - invalid token or validation errors"
+// @Failure      401      {object}  domain.ErrorResponse                "Unauthorized - token not found or already used"
+// @Failure      500      {object}  domain.ErrorResponse                "Internal server error"
 // @Router       /auth/password/reset [post]
 func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
@@ -427,11 +427,11 @@ func (h *AuthHandler) Me(c *gin.Context) {
 //
 // @Summary      Logout from all devices
 // @Description  Revoke all refresh tokens for the current user, logging out from all devices
-// @Tags         auth
+// @Tags         authentication
 // @Accept       json
 // @Produce      json
 // @Security     BearerAuth
-// @Success      200  {object}  map[string]interface{}  "Logged out from all devices successfully"
+// @Success      200  {object}  domain.SuccessResponse  "Logged out from all devices successfully"
 // @Failure      401  {object}  domain.ErrorResponse    "Unauthorized - invalid or missing token"
 // @Failure      500  {object}  domain.ErrorResponse    "Internal server error"
 // @Router       /auth/logout-all [post]

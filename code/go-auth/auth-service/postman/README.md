@@ -11,6 +11,7 @@ This Postman collection provides comprehensive testing capabilities for the Go A
 - **User Login** - Authenticate and obtain JWT tokens  
 - **Refresh Access Token** - Renew expired access tokens
 - **User Logout** - Revoke tokens and end sessions
+- **Logout from All Devices** - Revoke all tokens across all devices
 
 ### 🔑 Password Management
 - **Change Password** - Update password for authenticated users

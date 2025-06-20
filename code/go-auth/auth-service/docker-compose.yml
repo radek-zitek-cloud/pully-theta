@@ -1,11 +1,15 @@
 # Docker Compose for Go Authentication Service
 # Provides complete development and testing environment
 
+# Project name for consistent naming
+name: go-auth
+
 services:
   # =============================================================================
   # Application Service
   # =============================================================================
   auth-service:
+    image: auth-service:${VERSION:-1.0.0}
     build:
       context: .
       dockerfile: Dockerfile
@@ -129,7 +133,7 @@ services:
   migrate:
     image: migrate/migrate
     container_name: auth-migrate
-    profiles: ["tools"]
+    # profiles: ["tools"]
     volumes:
       - ./migrations:/migrations
     command: >
@@ -151,7 +155,7 @@ services:
     image: dpage/pgadmin4:latest
     container_name: auth-pgadmin
     restart: unless-stopped
-    profiles: ["tools"]
+    # profiles: ["tools"]
     environment:
       PGADMIN_DEFAULT_EMAIL: admin@example.com
       PGADMIN_DEFAULT_PASSWORD: admin
@@ -170,7 +174,7 @@ services:
     image: rediscommander/redis-commander:latest
     container_name: auth-redis-commander
     restart: unless-stopped
-    profiles: ["tools"]
+    # profiles: ["tools"]
     environment:
       REDIS_HOSTS: local:redis:6379:0:redispass
     ports:
