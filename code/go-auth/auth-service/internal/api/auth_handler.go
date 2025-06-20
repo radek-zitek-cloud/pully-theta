@@ -287,19 +287,6 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // Logout handles user logout requests.
 // This endpoint revokes the user's refresh token, effectively logging them out.
 //
-// @Summary      Logout user
-// @Description  Revoke refresh token and logout user
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        token  body      domain.LogoutRequest   true  "Logout request with refresh token"
-// @Success      200    {object}  domain.SuccessResponse "Logout successful"
-// @Failure      400    {object}  domain.ErrorResponse   "Bad request - validation errors"
-// @Failure      401    {object}  domain.ErrorResponse   "Unauthorized - invalid token"
-// @Failure      500    {object}  domain.ErrorResponse   "Internal server error"
-// @Router       /auth/logout [post]
-//
 // HTTP Method: POST
 // Path: /api/v1/auth/logout
 // Headers: Authorization: Bearer <access_token>
@@ -385,18 +372,6 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 // RefreshToken handles token refresh requests.
 // This endpoint exchanges a valid refresh token for a new access token.
-//
-// @Summary      Refresh access token
-// @Description  Exchange refresh token for new access token
-// @Tags         auth
-// @Accept       json
-// @Produce      json
-// @Param        token  body      domain.RefreshTokenRequest  true  "Refresh token request"
-// @Success      200    {object}  domain.LoginResponse        "Token refresh successful"
-// @Failure      400    {object}  domain.ErrorResponse        "Bad request - validation errors"
-// @Failure      401    {object}  domain.ErrorResponse        "Unauthorized - invalid refresh token"
-// @Failure      500    {object}  domain.ErrorResponse        "Internal server error"
-// @Router       /auth/refresh [post]
 //
 // HTTP Method: POST
 // Path: /api/v1/auth/refresh

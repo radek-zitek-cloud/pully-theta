@@ -1,6 +1,8 @@
 # Docker Compose for Go Authentication Service
 # Provides complete development and testing environment
 
+version: '3.8'
+
 services:
   # =============================================================================
   # Application Service
@@ -18,11 +20,6 @@ services:
     ports:
       - "18080:8080"
     environment:
-      # Go Module Configuration
-      GOPROXY: https://proxy.golang.org,direct
-      GOSUMDB: sum.golang.org
-      GOPRIVATE: ""
-      
       # Server Configuration
       PORT: 8080
       HOST: 0.0.0.0
@@ -67,7 +64,6 @@ services:
     volumes:
       - .:/app
       - /app/bin # Prevent overwriting binary
-      - go_mod_cache:/go/pkg/mod # Go module cache
     depends_on:
       postgres:
         condition: service_healthy
@@ -221,5 +217,3 @@ volumes:
     name: auth_redis_data
   pgadmin_data:
     name: auth_pgadmin_data
-  go_mod_cache:
-    name: auth_go_mod_cache

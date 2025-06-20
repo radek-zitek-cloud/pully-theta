@@ -106,15 +106,13 @@ WORKDIR /app
 # Copy source code
 COPY . .
 
-# Download dependencies as root first to avoid permission issues
+# Download dependencies
 RUN go mod download
 
-# Create non-root user and set up proper permissions
+# Create non-root user
 RUN addgroup -g 1001 -S appgroup && \
     adduser -u 1001 -S appuser -G appgroup && \
-    chown -R appuser:appgroup /app && \
-    chown -R appuser:appgroup /go/pkg/mod && \
-    chmod -R 755 /go/pkg/mod
+    chown -R appuser:appgroup /app
 
 USER appuser
 

@@ -108,15 +108,6 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
-// LogoutRequest represents the data required for user logout.
-// Uses the refresh token to identify and revoke the session.
-//
-// @Description User logout request payload
-type LogoutRequest struct {
-	// RefreshToken is the JWT refresh token to revoke
-	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
-}
-
 // AuthResponse represents the response returned after successful authentication.
 // Contains both access and refresh tokens along with user information.
 //
