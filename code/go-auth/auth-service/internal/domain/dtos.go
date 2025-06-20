@@ -10,6 +10,7 @@ import (
 // This DTO validates input and ensures all required fields are provided
 // with appropriate constraints and formats.
 //
+// @Description User registration request payload
 // Validation rules:
 // - Email: Required, valid format, max 255 characters
 // - Password: Required, minimum 8 characters, complexity requirements
@@ -35,6 +36,7 @@ type RegisterRequest struct {
 // LoginRequest represents the data required for user authentication.
 // Uses email and password combination for login.
 //
+// @Description User login request payload
 // Security considerations:
 // - Email lookup should be case-insensitive
 // - Failed attempts should be rate-limited
@@ -106,9 +108,19 @@ type RefreshTokenRequest struct {
 	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
 }
 
+// LogoutRequest represents the data required for user logout.
+// Uses the refresh token to identify and revoke the session.
+//
+// @Description User logout request payload
+type LogoutRequest struct {
+	// RefreshToken is the JWT refresh token to revoke
+	RefreshToken string `json:"refresh_token" validate:"required" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+}
+
 // AuthResponse represents the response returned after successful authentication.
 // Contains both access and refresh tokens along with user information.
 //
+// @Description Authentication response with JWT tokens and user info
 // Token types:
 // - AccessToken: Short-lived (15 minutes), used for API authentication
 // - RefreshToken: Long-lived (7 days), used to obtain new access tokens
@@ -132,6 +144,7 @@ type AuthResponse struct {
 // UserResponse represents user data returned in API responses.
 // Excludes sensitive information like password hashes.
 //
+// @Description User information in API responses
 // This DTO is used in various endpoints:
 // - Authentication responses
 // - User profile endpoints
@@ -171,6 +184,7 @@ type UserResponse struct {
 // ErrorResponse represents the standard error response format.
 // Provides consistent error messaging across all API endpoints.
 //
+// @Description Standard error response format
 // HTTP status codes:
 // - 400: Validation errors, malformed requests
 // - 401: Authentication required or failed
@@ -273,6 +287,54 @@ type HealthCheck struct {
 
 	// LastChecked is when this dependency was last checked
 	LastChecked time.Time `json:"last_checked" example:"2023-01-15T10:30:00Z"`
+}
+
+// RegisterResponse represents the response returned after successful user registration.
+// Contains the newly created user information.
+//
+// @Description User registration success response
+type RegisterResponse struct {
+	// Success indicates if the operation was successful
+	Success bool `json:"success" example:"true"`
+
+	// Message provides a human-readable success message
+	Message string `json:"message" example:"User registered successfully"`
+
+	// User contains the newly registered user's information
+	User UserResponse `json:"user"`
+
+	// RequestID is a unique identifier for this request
+	RequestID string `json:"request_id" example:"req_123e4567-e89b-12d3-a456-426614174000"`
+
+	// Timestamp is when the registration was completed
+	Timestamp time.Time `json:"timestamp" example:"2023-01-15T10:30:00Z"`
+}
+
+// LoginResponse represents the response returned after successful authentication.
+// Contains JWT tokens and user information.
+//
+// @Description User login success response with JWT tokens
+type LoginResponse struct {
+	// AccessToken is the JWT token for API authentication
+	AccessToken string `json:"access_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+
+	// RefreshToken is used to obtain new access tokens
+	RefreshToken string `json:"refresh_token" example:"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."`
+
+	// TokenType indicates the type of token (typically "Bearer")
+	TokenType string `json:"token_type" example:"Bearer"`
+
+	// ExpiresIn indicates access token lifetime in seconds
+	ExpiresIn int64 `json:"expires_in" example:"900"`
+
+	// User contains the authenticated user's information
+	User UserResponse `json:"user"`
+
+	// RequestID is a unique identifier for this request
+	RequestID string `json:"request_id" example:"req_123e4567-e89b-12d3-a456-426614174000"`
+
+	// Timestamp is when the login was completed
+	Timestamp time.Time `json:"timestamp" example:"2023-01-15T10:30:00Z"`
 }
 
 // ToUserResponse converts a User entity to a UserResponse DTO.

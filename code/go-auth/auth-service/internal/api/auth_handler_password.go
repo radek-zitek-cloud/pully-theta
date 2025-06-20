@@ -14,6 +14,19 @@ import (
 // ChangePassword handles password change requests from authenticated users.
 // This endpoint requires the current password for verification before allowing the change.
 //
+// @Summary      Change user password
+// @Description  Change authenticated user's password with current password verification
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        password  body      domain.ChangePasswordRequest  true  "Password change request"
+// @Success      200       {object}  domain.SuccessResponse        "Password changed successfully"
+// @Failure      400       {object}  domain.ErrorResponse          "Bad request - validation errors"
+// @Failure      401       {object}  domain.ErrorResponse          "Unauthorized - invalid current password"
+// @Failure      500       {object}  domain.ErrorResponse          "Internal server error"
+// @Router       /auth/change-password [post]
+//
 // HTTP Method: POST
 // Path: /api/v1/auth/change-password
 // Headers: Authorization: Bearer <access_token>
@@ -109,6 +122,18 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 // ResetPassword handles password reset initiation requests.
 // This endpoint sends a password reset token to the user's email address.
 //
+// @Summary      Initiate password reset
+// @Description  Send password reset instructions to user's email
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        email  body      domain.ResetPasswordRequest  true  "Password reset request"
+// @Success      200    {object}  domain.SuccessResponse       "Reset instructions sent"
+// @Failure      400    {object}  domain.ErrorResponse         "Bad request - validation errors"
+// @Failure      429    {object}  domain.ErrorResponse         "Too many requests - rate limit exceeded"
+// @Failure      500    {object}  domain.ErrorResponse         "Internal server error"
+// @Router       /auth/reset-password [post]
+//
 // HTTP Method: POST
 // Path: /api/v1/auth/reset-password
 // Content-Type: application/json
@@ -192,6 +217,18 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 
 // ConfirmResetPassword handles password reset completion requests.
 // This endpoint uses the token sent via email to set a new password.
+//
+// @Summary      Complete password reset
+// @Description  Reset password using token from email
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        reset  body      domain.ConfirmResetPasswordRequest  true  "Password reset confirmation"
+// @Success      200    {object}  domain.SuccessResponse              "Password reset successful"
+// @Failure      400    {object}  domain.ErrorResponse                "Bad request - validation errors"
+// @Failure      401    {object}  domain.ErrorResponse                "Unauthorized - invalid token"
+// @Failure      500    {object}  domain.ErrorResponse                "Internal server error"
+// @Router       /auth/confirm-reset-password [post]
 //
 // HTTP Method: POST
 // Path: /api/v1/auth/confirm-reset-password
@@ -280,6 +317,17 @@ func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 // Me handles requests for the current user's profile information.
 // This endpoint returns the authenticated user's profile data.
 //
+// @Summary      Get current user profile
+// @Description  Retrieve authenticated user's profile information
+// @Tags         user
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  domain.UserResponse   "User profile data"
+// @Failure      401  {object}  domain.ErrorResponse  "Unauthorized - invalid token"
+// @Failure      403  {object}  domain.ErrorResponse  "Forbidden - account inactive"
+// @Failure      500  {object}  domain.ErrorResponse  "Internal server error"
+// @Router       /auth/me [get]
+//
 // HTTP Method: GET
 // Path: /api/v1/auth/me
 // Headers: Authorization: Bearer <access_token>
@@ -345,6 +393,16 @@ func (h *AuthHandler) Me(c *gin.Context) {
 
 // LogoutAll handles requests to log out from all devices.
 // This endpoint revokes all refresh tokens for the authenticated user.
+//
+// @Summary      Logout from all devices
+// @Description  Revoke all refresh tokens for the authenticated user
+// @Tags         auth
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  domain.SuccessResponse  "Logged out from all devices"
+// @Failure      401  {object}  domain.ErrorResponse    "Unauthorized - invalid token"
+// @Failure      500  {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/logout-all [post]
 //
 // HTTP Method: POST
 // Path: /api/v1/auth/logout-all
@@ -414,6 +472,14 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 
 // HealthCheck handles health check requests.
 // This endpoint provides information about service health and dependencies.
+//
+// @Summary      Health check
+// @Description  Check service health and dependencies status
+// @Tags         health
+// @Produce      json
+// @Success      200  {object}  domain.HealthCheckResponse  "Service is healthy"
+// @Failure      503  {object}  domain.HealthCheckResponse  "Service is unhealthy"
+// @Router       /health [get]
 //
 // HTTP Method: GET
 // Path: /health

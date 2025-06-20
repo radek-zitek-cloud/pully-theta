@@ -1,0 +1,80 @@
+# .dockerignore for Go Authentication Service
+# Excludes unnecessary files from Docker build context
+
+# Binaries and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+bin/
+*.test
+*.out
+coverage.out
+
+# Go workspace files
+go.work
+go.work.sum
+
+# Environment files (use docker-compose environment instead)
+.env
+.env.local
+.env.test
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (except essential docs)
+*.md
+docs/ARCHITECTURE.md
+
+# Test files and coverage
+test/
+*_test.go
+tmp/
+
+# Development tools
+.air.toml
+air_tmp/
+
+# Docker files (to avoid recursion)
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Scripts (except essential ones)
+scripts/
+*.sh
+
+# Logs
+*.log
+logs/
+
+# Postman collections (for development only)
+postman/
+
+# Node.js (if any frontend tools)
+node_modules/
+npm-debug.log*
+
+# Temporary files
+*.tmp
+*.temp
+.cache/

@@ -13,13 +13,46 @@ import (
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq" // PostgreSQL driver
 	"github.com/sirupsen/logrus"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 
+	_ "auth-service/docs" // Import generated swagger docs
 	"auth-service/internal/api"
 	"auth-service/internal/config"
 	"auth-service/internal/middleware"
 	"auth-service/internal/repository"
 	"auth-service/internal/service"
 )
+
+// @title           Authentication Service API
+// @version         1.0.0
+// @description     A comprehensive authentication and user management microservice built with Go and Gin.
+// @description     This service provides secure user registration, login, JWT token management,
+// @description     password reset functionality, and comprehensive audit logging.
+
+// @contact.name   API Support
+// @contact.url    https://github.com/your-org/auth-service
+// @contact.email  support@example.com
+
+// @license.name  MIT
+// @license.url   https://opensource.org/licenses/MIT
+
+// @host      localhost:18080
+// @BasePath  /api/v1
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
+// @description Type "Bearer" followed by a space and JWT token.
+
+// @tag.name auth
+// @tag.description Authentication operations including registration, login, logout, and token refresh
+
+// @tag.name user
+// @tag.description User management operations including profile updates and password changes
+
+// @tag.name health
+// @tag.description Health check and monitoring endpoints
 
 // main is the entry point for the authentication service.
 // This function sets up all dependencies, initializes the HTTP server,
@@ -354,6 +387,12 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, logger *logru
 				protected.POST("/change-password", authHandler.ChangePassword)
 			}
 		}
+	}
+
+	// Swagger documentation route (only enable if configured)
+	if cfg.Swagger.Enabled {
+		router.GET(cfg.Swagger.Path+"/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+		logger.WithField("path", cfg.Swagger.Path).Info("Swagger UI enabled")
 	}
 
 	return router

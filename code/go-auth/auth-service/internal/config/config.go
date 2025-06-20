@@ -46,6 +46,9 @@ type Config struct {
 
 	// Redis configuration for caching and sessions
 	Redis RedisConfig `json:"redis"`
+
+	// Swagger configuration for API documentation
+	Swagger SwaggerConfig `json:"swagger"`
 }
 
 // ServerConfig contains HTTP server related settings.
@@ -240,6 +243,34 @@ type RedisConfig struct {
 	MinIdleConns int `json:"min_idle_conns"`
 }
 
+// SwaggerConfig contains Swagger/OpenAPI documentation settings.
+// These settings control how API documentation is generated and served.
+type SwaggerConfig struct {
+	// Enabled controls whether Swagger UI is accessible
+	Enabled bool `json:"enabled"`
+
+	// Path is the URL path where Swagger UI will be served
+	Path string `json:"path"`
+
+	// Title is the API title shown in Swagger UI
+	Title string `json:"title"`
+
+	// Description is the API description shown in Swagger UI
+	Description string `json:"description"`
+
+	// Version is the API version shown in Swagger UI
+	Version string `json:"version"`
+
+	// Host is the API host (e.g., "api.example.com" or "localhost:8080")
+	Host string `json:"host"`
+
+	// BasePath is the base path for all API endpoints (e.g., "/api/v1")
+	BasePath string `json:"base_path"`
+
+	// Schemes are the supported protocols (http, https)
+	Schemes []string `json:"schemes"`
+}
+
 // Load reads configuration from environment variables and returns a Config struct.
 // This function attempts to load from a .env file first, then falls back to system
 // environment variables. Default values are provided for non-critical settings.
@@ -331,6 +362,16 @@ func Load() (*Config, error) {
 			MaxRetries:   getIntOrDefault("REDIS_MAX_RETRIES", 3),
 			PoolSize:     getIntOrDefault("REDIS_POOL_SIZE", 10),
 			MinIdleConns: getIntOrDefault("REDIS_MIN_IDLE_CONNS", 2),
+		},
+		Swagger: SwaggerConfig{
+			Enabled:     getBoolOrDefault("SWAGGER_ENABLED", true),
+			Path:        getEnvOrDefault("SWAGGER_PATH", "/swagger"),
+			Title:       getEnvOrDefault("SWAGGER_TITLE", "Authentication Service API"),
+			Description: getEnvOrDefault("SWAGGER_DESCRIPTION", "RESTful API for user authentication and management"),
+			Version:     getEnvOrDefault("SWAGGER_VERSION", "1.0.0"),
+			Host:        getEnvOrDefault("SWAGGER_HOST", "localhost:8080"),
+			BasePath:    getEnvOrDefault("SWAGGER_BASE_PATH", "/api/v1"),
+			Schemes:     getStringSliceOrDefault("SWAGGER_SCHEMES", []string{"http", "https"}),
 		},
 	}
 

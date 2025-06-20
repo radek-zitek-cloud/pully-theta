@@ -72,6 +72,19 @@ func NewAuthHandler(authService *service.AuthService, logger *logrus.Logger) (*A
 // Register handles user registration requests.
 // This endpoint allows new users to create accounts with email and password.
 //
+// @Summary      Register a new user
+// @Description  Create a new user account with email, password, and profile information
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        user  body      domain.RegisterRequest  true  "User registration data"
+// @Success      201   {object}  domain.RegisterResponse "User successfully registered"
+// @Failure      400   {object}  domain.ErrorResponse    "Bad request - validation errors"
+// @Failure      409   {object}  domain.ErrorResponse    "Conflict - email already exists"
+// @Failure      429   {object}  domain.ErrorResponse    "Too many requests - rate limit exceeded"
+// @Failure      500   {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/register [post]
+//
 // HTTP Method: POST
 // Path: /api/v1/auth/register
 // Content-Type: application/json
@@ -170,6 +183,19 @@ func (h *AuthHandler) Register(c *gin.Context) {
 // Login handles user authentication requests.
 // This endpoint authenticates users and returns JWT tokens for API access.
 //
+// @Summary      Authenticate user
+// @Description  Authenticate user with email and password, returns JWT tokens
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        credentials  body      domain.LoginRequest   true  "User login credentials"
+// @Success      200          {object}  domain.LoginResponse  "Authentication successful"
+// @Failure      400          {object}  domain.ErrorResponse  "Bad request - validation errors"
+// @Failure      401          {object}  domain.ErrorResponse  "Unauthorized - invalid credentials"
+// @Failure      429          {object}  domain.ErrorResponse  "Too many requests - rate limit exceeded"
+// @Failure      500          {object}  domain.ErrorResponse  "Internal server error"
+// @Router       /auth/login [post]
+//
 // HTTP Method: POST
 // Path: /api/v1/auth/login
 // Content-Type: application/json
@@ -261,6 +287,19 @@ func (h *AuthHandler) Login(c *gin.Context) {
 // Logout handles user logout requests.
 // This endpoint revokes the user's refresh token, effectively logging them out.
 //
+// @Summary      Logout user
+// @Description  Revoke refresh token and logout user
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        token  body      domain.LogoutRequest   true  "Logout request with refresh token"
+// @Success      200    {object}  domain.SuccessResponse "Logout successful"
+// @Failure      400    {object}  domain.ErrorResponse   "Bad request - validation errors"
+// @Failure      401    {object}  domain.ErrorResponse   "Unauthorized - invalid token"
+// @Failure      500    {object}  domain.ErrorResponse   "Internal server error"
+// @Router       /auth/logout [post]
+//
 // HTTP Method: POST
 // Path: /api/v1/auth/logout
 // Headers: Authorization: Bearer <access_token>
@@ -346,6 +385,18 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 
 // RefreshToken handles token refresh requests.
 // This endpoint exchanges a valid refresh token for a new access token.
+//
+// @Summary      Refresh access token
+// @Description  Exchange refresh token for new access token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        token  body      domain.RefreshTokenRequest  true  "Refresh token request"
+// @Success      200    {object}  domain.LoginResponse        "Token refresh successful"
+// @Failure      400    {object}  domain.ErrorResponse        "Bad request - validation errors"
+// @Failure      401    {object}  domain.ErrorResponse        "Unauthorized - invalid refresh token"
+// @Failure      500    {object}  domain.ErrorResponse        "Internal server error"
+// @Router       /auth/refresh [post]
 //
 // HTTP Method: POST
 // Path: /api/v1/auth/refresh
