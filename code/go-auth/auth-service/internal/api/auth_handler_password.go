@@ -1,12 +1,10 @@
 package api
 
 import (
-	"fmt"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 
 	"auth-service/internal/domain"
 )
@@ -47,6 +45,19 @@ import (
 // - New password must meet security requirements
 // - All existing refresh tokens are revoked after successful change
 // - Password change events are logged for audit
+//
+// @Summary      Change user password
+// @Description  Change the current user's password with current password verification
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        password  body      map[string]string       true  "Password change data"
+// @Success      200       {object}  map[string]interface{}  "Password changed successfully"
+// @Failure      400       {object}  domain.ErrorResponse    "Bad request - validation errors"
+// @Failure      401       {object}  domain.ErrorResponse    "Unauthorized - invalid current password"
+// @Failure      500       {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/password/change [put]
 func (h *AuthHandler) ChangePassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
 	clientIP := c.ClientIP()
@@ -139,6 +150,18 @@ func (h *AuthHandler) ChangePassword(c *gin.Context) {
 // - Reset tokens are time-limited and single-use
 // - All reset requests are logged for audit
 // - Email validation prevents malicious inputs
+//
+// @Summary      Request password reset
+// @Description  Request a password reset email with a secure reset token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        email  body      map[string]string       true  "Email address for password reset"
+// @Success      200    {object}  map[string]interface{}  "Password reset email sent (always returns success for privacy)"
+// @Failure      400    {object}  domain.ErrorResponse    "Bad request - invalid email format"
+// @Failure      429    {object}  domain.ErrorResponse    "Too many requests - rate limit exceeded"
+// @Failure      500    {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/password/forgot [post]
 func (h *AuthHandler) ResetPassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
 	clientIP := c.ClientIP()
@@ -226,6 +249,18 @@ func (h *AuthHandler) ResetPassword(c *gin.Context) {
 // - All existing refresh tokens are revoked after successful reset
 // - Reset token is invalidated after use
 // - Password reset completion events are logged for audit
+//
+// @Summary      Confirm password reset
+// @Description  Reset password using a valid reset token received via email
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        reset  body      map[string]string       true  "Password reset confirmation data"
+// @Success      200    {object}  map[string]interface{}  "Password reset successfully"
+// @Failure      400    {object}  domain.ErrorResponse    "Bad request - invalid token or validation errors"
+// @Failure      401    {object}  domain.ErrorResponse    "Unauthorized - token not found or already used"
+// @Failure      500    {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/password/reset [post]
 func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 	requestID := h.getRequestID(c)
 	clientIP := c.ClientIP()
@@ -308,6 +343,18 @@ func (h *AuthHandler) ConfirmResetPassword(c *gin.Context) {
 // - Requires valid access token for authentication
 // - Sensitive information (password hash) is excluded
 // - Account status is checked before returning data
+//
+// @Summary      Get current user profile
+// @Description  Get the current authenticated user's profile information
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  domain.UserResponse     "User profile data"
+// @Failure      401  {object}  domain.ErrorResponse    "Unauthorized - invalid or missing token"
+// @Failure      403  {object}  domain.ErrorResponse    "Forbidden - account inactive or deleted"
+// @Failure      500  {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/me [get]
 func (h *AuthHandler) Me(c *gin.Context) {
 	requestID := h.getRequestID(c)
 
@@ -368,6 +415,17 @@ func (h *AuthHandler) Me(c *gin.Context) {
 // - Immediately revokes all user's refresh tokens
 // - Useful for security incidents or compromise response
 // - Logs logout events for audit
+//
+// @Summary      Logout from all devices
+// @Description  Revoke all refresh tokens for the current user, logging out from all devices
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]interface{}  "Logged out from all devices successfully"
+// @Failure      401  {object}  domain.ErrorResponse    "Unauthorized - invalid or missing token"
+// @Failure      500  {object}  domain.ErrorResponse    "Internal server error"
+// @Router       /auth/logout-all [post]
 func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	requestID := h.getRequestID(c)
 	clientIP := c.ClientIP()
@@ -410,81 +468,4 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	}).Info("User logged out from all devices successfully")
 
 	c.JSON(http.StatusOK, response)
-}
-
-// HealthCheck handles health check requests.
-// This endpoint provides information about service health and dependencies.
-//
-// HTTP Method: GET
-// Path: /health
-//
-// Success Response (200 OK):
-//
-//	{
-//	  "status": "healthy",
-//	  "timestamp": "2023-01-15T10:30:00Z",
-//	  "version": "1.0.0",
-//	  "checks": {
-//	    "database": {
-//	      "status": "healthy",
-//	      "response_time_ms": 25,
-//	      "last_checked": "2023-01-15T10:30:00Z"
-//	    }
-//	  }
-//	}
-//
-// Error Responses:
-//   - 503 Service Unavailable: Service or dependencies unhealthy
-//
-// This endpoint is used by:
-// - Load balancers for health checks
-// - Monitoring systems for service status
-// - Operations teams for troubleshooting
-func (h *AuthHandler) HealthCheck(c *gin.Context) {
-	requestID := h.getRequestID(c)
-
-	h.logger.WithField("request_id", requestID).Debug("Health check request received")
-
-	// Basic health response - in production, would check database connectivity
-	response := domain.HealthCheckResponse{
-		Status:    "healthy",
-		Timestamp: time.Now(),
-		Version:   "1.0.0", // This would come from build info
-		Checks: map[string]domain.HealthCheck{
-			"database": {
-				Status:       "healthy",
-				ResponseTime: 25, // This would be actual response time
-				LastChecked:  time.Now(),
-			},
-		},
-	}
-
-	c.JSON(http.StatusOK, response)
-}
-
-// getUserIDFromContext extracts the user ID from the Gin context.
-// This is set by the JWT authentication middleware after token validation.
-//
-// Parameters:
-//   - c: Gin context containing user information
-//
-// Returns:
-//   - User UUID if found in context
-//   - Error if user ID is missing or invalid format
-func (h *AuthHandler) getUserIDFromContext(c *gin.Context) (uuid.UUID, error) {
-	// Try to get user ID from context (set by auth middleware)
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return uuid.Nil, fmt.Errorf("user ID not found in context")
-	}
-
-	// Convert to UUID
-	switch v := userIDValue.(type) {
-	case uuid.UUID:
-		return v, nil
-	case string:
-		return uuid.Parse(v)
-	default:
-		return uuid.Nil, fmt.Errorf("invalid user ID format in context")
-	}
 }

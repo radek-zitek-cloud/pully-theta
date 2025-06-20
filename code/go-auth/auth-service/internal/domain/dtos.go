@@ -172,6 +172,33 @@ type UserResponse struct {
 	UpdatedAt time.Time `json:"updated_at" example:"2023-01-15T10:30:00Z"`
 }
 
+// UpdateProfileRequest represents the data required for updating user profile.
+// This DTO allows partial updates - all fields are optional and only provided fields will be updated.
+//
+// @Description User profile update request payload
+// Validation rules:
+// - Email: Optional, valid format if provided, max 255 characters
+// - Names: Optional, non-empty if provided, max 100 characters each
+// - All fields support null/empty values to indicate no change desired
+//
+// Business rules:
+// - Email changes require re-verification
+// - Updates are logged for audit purposes
+// - Only the authenticated user can update their own profile
+type UpdateProfileRequest struct {
+	// Email is the user's new email address (triggers verification process)
+	// If provided, must be unique in the system and will require re-verification
+	Email *string `json:"email,omitempty" validate:"omitempty,email,max=255" example:"newemail@example.com"`
+
+	// FirstName is the user's updated given name
+	// If provided, must be non-empty and within length limits
+	FirstName *string `json:"first_name,omitempty" validate:"omitempty,min=1,max=100" example:"UpdatedFirst"`
+
+	// LastName is the user's updated family name
+	// If provided, must be non-empty and within length limits
+	LastName *string `json:"last_name,omitempty" validate:"omitempty,min=1,max=100" example:"UpdatedLast"`
+}
+
 // ErrorResponse represents the standard error response format.
 // Provides consistent error messaging across all API endpoints.
 //

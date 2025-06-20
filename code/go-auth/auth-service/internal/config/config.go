@@ -261,7 +261,7 @@ type SwaggerConfig struct {
 	// Version is the API version shown in Swagger UI
 	Version string `json:"version"`
 
-	// Host is the API host (e.g., "api.example.com" or "localhost:8080")
+	// Host is the API host (e.g., "api.example.com" or "localhost:6910")
 	Host string `json:"host"`
 
 	// BasePath is the base path for all API endpoints (e.g., "/api/v1")
@@ -300,7 +300,7 @@ func Load() (*Config, error) {
 
 	config := &Config{
 		Server: ServerConfig{
-			Port:           getEnvOrDefault("PORT", "8080"),
+			Port:           getEnvOrDefault("PORT", "6910"),
 			Host:           getEnvOrDefault("HOST", "0.0.0.0"),
 			Environment:    getEnvOrDefault("ENVIRONMENT", "development"),
 			ReadTimeout:    getDurationOrDefault("SERVER_READ_TIMEOUT", 15*time.Second),
@@ -369,7 +369,7 @@ func Load() (*Config, error) {
 			Title:       getEnvOrDefault("SWAGGER_TITLE", "Authentication Service API"),
 			Description: getEnvOrDefault("SWAGGER_DESCRIPTION", "RESTful API for user authentication and management"),
 			Version:     getEnvOrDefault("SWAGGER_VERSION", "1.0.0"),
-			Host:        getEnvOrDefault("SWAGGER_HOST", "localhost:8080"),
+			Host:        getEnvOrDefault("SWAGGER_HOST", "localhost:6910"),
 			BasePath:    getEnvOrDefault("SWAGGER_BASE_PATH", "/api/v1"),
 			Schemes:     getStringSliceOrDefault("SWAGGER_SCHEMES", []string{"http", "https"}),
 		},

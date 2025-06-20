@@ -6,9 +6,15 @@
 # =============================================================================
 FROM golang:1.24-alpine AS builder
 
-# Set build metadata
+# Set build metadata - all version information for comprehensive build tracking
 ARG VERSION=dev
-ARG BUILD_TIME
+ARG BUILD_TIME=unknown
+ARG GIT_COMMIT=unknown
+ARG GIT_BRANCH=unknown
+ARG BUILD_USER=unknown
+ARG BUILD_HOST=unknown
+ARG SEMANTIC_VERSION=1.0.0
+ARG BUILD_NUMBER=0
 ARG CGO_ENABLED=0
 ARG GOOS=linux
 ARG GOARCH=amd64
@@ -28,11 +34,19 @@ RUN go mod download && go mod verify
 # Copy source code
 COPY . .
 
-# Build the application with optimizations
+# Build the application with comprehensive version information
 RUN go build \
     -a \
     -installsuffix cgo \
-    -ldflags="-w -s -X main.Version=${VERSION} -X main.BuildTime=${BUILD_TIME}" \
+    -ldflags="-w -s \
+        -X main.Version=${VERSION} \
+        -X main.BuildTime=${BUILD_TIME} \
+        -X main.GitCommit=${GIT_COMMIT} \
+        -X main.GitBranch=${GIT_BRANCH} \
+        -X main.BuildUser=${BUILD_USER} \
+        -X main.BuildHost=${BUILD_HOST} \
+        -X main.SemanticVersion=${SEMANTIC_VERSION} \
+        -X main.BuildNumber=${BUILD_NUMBER}" \
     -o auth-service \
     cmd/server/main.go
 

@@ -1,8 +1,6 @@
 # Docker Compose for Go Authentication Service
 # Provides complete development and testing environment
 
-version: '3.8'
-
 services:
   # =============================================================================
   # Application Service
@@ -13,15 +11,15 @@ services:
       dockerfile: Dockerfile
       target: development
       args:
-        VERSION: ${VERSION:-dev}
-        BUILD_TIME: ${BUILD_TIME}
+        VERSION: ${VERSION:-1.0.0}
+        BUILD_TIME: ${BUILD_TIME:-2025-06-20T16:00:00Z}
     container_name: auth-service
     restart: unless-stopped
     ports:
-      - "18080:8080"
+      - "6910:6910"
     environment:
       # Server Configuration
-      PORT: 8080
+      PORT: 6910
       HOST: 0.0.0.0
       ENVIRONMENT: development
       
@@ -72,7 +70,7 @@ services:
     networks:
       - auth-network
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:6910/health"]
       interval: 30s
       timeout: 10s
       retries: 3

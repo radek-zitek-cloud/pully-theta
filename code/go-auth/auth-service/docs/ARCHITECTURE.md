@@ -84,31 +84,34 @@ graph LR
         E[Gin Framework]
         F[JWT Tokens]
         G[bcrypt Hashing]
+        H[Swagger/OpenAPI 3.0]
     end
     
     subgraph "Data Storage"
-        H[PostgreSQL 12+]
-        I[Redis Cache]
+        I[PostgreSQL 12+]
+        J[Redis Cache]
     end
     
     subgraph "DevOps & Infrastructure"
-        J[Docker]
-        K[Docker Compose]
-        L[Kubernetes]
-        M[Prometheus]
-        N[Grafana]
+        K[Docker]
+        L[Docker Compose]
+        M[Kubernetes]
+        N[Prometheus]
+        O[Grafana]
     end
     
     A --> D
     B --> D
     C --> D
-    D --> H
     D --> I
-    D --> M
+    D --> J
+    D --> N
+    H --> D
     
     style D fill:#00BCD4
-    style H fill:#4CAF50
-    style I fill:#FF9800
+    style I fill:#4CAF50
+    style J fill:#FF9800
+    style H fill:#9C27B0
 ```
 
 ---
@@ -254,6 +257,7 @@ graph TB
     subgraph "Handler Layer"
         AUTH_H[Auth Handler]
         HEALTH_H[Health Handler]
+        SWAGGER_H[Swagger UI Handler]
     end
     
     subgraph "Service Layer"
@@ -274,9 +278,18 @@ graph TB
         SMTP[SMTP Server]
     end
     
+    subgraph "Documentation"
+        SWAGGER_DOCS[Generated Swagger Docs]
+        API_SCHEMAS[OpenAPI Schemas]
+    end
+    
     ROUTER --> MW
     MW --> AUTH_H
     MW --> HEALTH_H
+    MW --> SWAGGER_H
+    
+    SWAGGER_H --> SWAGGER_DOCS
+    SWAGGER_DOCS --> API_SCHEMAS
     
     AUTH_H --> AUTH_S
     AUTH_S --> EMAIL_S
@@ -326,6 +339,53 @@ graph LR
     style AUTH fill:#FFE0B2
     style RATE fill:#FFCDD2
     style LOG fill:#E1F5FE
+```
+
+### API Documentation Architecture
+
+```mermaid
+graph LR
+    subgraph "Code Annotations"
+        HANDLERS[Go Handler Functions]
+        STRUCTS[Request/Response Structs]
+        COMMENTS[Swagger Comments]
+    end
+    
+    subgraph "Documentation Generation"
+        SWAG[Swaggo CLI Tool]
+        PARSER[Annotation Parser]
+        GENERATOR[Schema Generator]
+    end
+    
+    subgraph "Generated Assets"
+        DOCS_GO[docs/docs.go]
+        SWAGGER_JSON[docs/swagger.json]
+        SWAGGER_YAML[docs/swagger.yaml]
+    end
+    
+    subgraph "Runtime Components"
+        GIN_SWAGGER[Gin-Swagger Middleware]
+        SWAGGER_UI[Interactive Swagger UI]
+        API_SPEC[OpenAPI 3.0 Specification]
+    end
+    
+    HANDLERS --> SWAG
+    STRUCTS --> SWAG
+    COMMENTS --> SWAG
+    
+    SWAG --> PARSER
+    PARSER --> GENERATOR
+    GENERATOR --> DOCS_GO
+    GENERATOR --> SWAGGER_JSON
+    GENERATOR --> SWAGGER_YAML
+    
+    DOCS_GO --> GIN_SWAGGER
+    SWAGGER_JSON --> SWAGGER_UI
+    SWAGGER_YAML --> API_SPEC
+    
+    style SWAG fill:#9C27B0
+    style SWAGGER_UI fill:#E3F2FD
+    style DOCS_GO fill:#E8F5E8
 ```
 
 ---

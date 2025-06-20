@@ -28,10 +28,12 @@
 ### 📚 **Documentation**
 - ✅ **README.md**: Comprehensive project documentation
 - ✅ **API Documentation**: All endpoints documented with examples
+- ✅ **Interactive Swagger UI**: Complete OpenAPI 3.0 documentation with live testing interface
 - ✅ **Architecture Docs**: Clean architecture explanation with comprehensive diagrams
 - ✅ **Configuration Docs**: All environment variables explained
 - ✅ **Security Features**: JWT, password hashing, rate limiting documented
 - ✅ **Deployment Guide**: Docker and production deployment instructions
+- ✅ **Swagger Integration**: Automatic API documentation generation with swaggo/swag
 - ✅ **Architecture Diagrams**: Complete visual documentation with Mermaid diagrams
   - System overview and technology stack
   - Clean Architecture layer diagrams
@@ -65,18 +67,78 @@
 - `POST /api/v1/auth/logout` - User logout (revoke tokens)
 - `POST /api/v1/auth/refresh` - Refresh access token
 - `GET /api/v1/auth/me` - Get current user profile
-- `PUT /api/v1/auth/me` - Update user profile
+- `PUT /api/v1/auth/me` - Update user profile ✨ **NEWLY IMPLEMENTED**
 
 ### Password Management
 - `POST /api/v1/auth/password/forgot` - Request password reset
 - `POST /api/v1/auth/password/reset` - Reset password with token
-- `PUT /api/v1/auth/password/change` - Change password (authenticated)
+- `PUT /api/v1/auth/password/change` - Change password (authenticated) ✨ **ROUTE FIXED**
 
-### Health & Monitoring
+### Documentation & Monitoring
+- `GET /swagger/*any` - Interactive Swagger UI documentation
 - `GET /health` - Basic health check
 - `GET /health/ready` - Readiness check
 - `GET /health/live` - Liveness check
 - `GET /metrics` - Prometheus metrics
+
+### 📖 **API Documentation Features**
+- ✅ **Swagger UI**: Interactive web interface at `/swagger/index.html`
+- ✅ **OpenAPI 3.0**: Complete specification with request/response schemas
+- ✅ **Live Testing**: Test endpoints directly from browser
+- ✅ **Authentication Support**: Bearer token authentication in UI
+- ✅ **Response Examples**: Detailed examples for all endpoints
+- ✅ **Error Documentation**: Complete error response schemas
+- ✅ **Auto-Generated**: Documentation updates automatically with code changes
+
+### 🆕 **RECENT IMPLEMENTATION (2025-06-20)**
+- ✅ **Update User Profile Endpoint**: Complete `PUT /api/v1/auth/me` implementation
+  - **Backend Service Methods**: Added `GetUserByID`, `GetUserByEmail`, `UpdateProfile` to AuthService
+  - **Request/Response DTOs**: Created `UpdateProfileRequest` with validation
+  - **Partial Updates**: Support for optional field updates (email, first_name, last_name)
+  - **Email Validation**: Uniqueness checks and automatic re-verification
+  - **Audit Logging**: Profile changes tracked with `LogAuditEvent` method
+  - **Swagger Documentation**: Complete API documentation with examples
+  - **Postman Integration**: Validated endpoint compatibility with existing collection
+  - **Error Handling**: Comprehensive validation and HTTP status codes
+  - **Security**: Only authenticated users can update their own profile
+
+- ✅ **Password Routes Fixed**: Corrected routing inconsistencies causing 404 errors
+  - **Change Password**: Fixed route from `POST /change-password` to `PUT /password/change`
+  - **Forgot Password**: Fixed route from `/reset-password` to `/password/forgot`
+  - **Reset Password**: Fixed route from `/confirm-reset-password` to `/password/reset`
+  - **RESTful Design**: All routes now follow proper REST conventions
+  - **Postman Compatibility**: Routes now match Postman collection expectations
+  - **Swagger Alignment**: Documentation and implementation are consistent
+
+- ✅ **Docker Compose Environment Fixed**: Resolved build warnings and enhanced developer experience
+  - **Environment Variables**: Fixed undefined `BUILD_TIME` and `VERSION` warnings
+  - **Default Values**: Added sensible defaults to docker-compose.yml
+  - **Enhanced .env Files**: Updated .env and .env.example with all required variables
+  - **Makefile Integration**: Added compose-* commands for full environment management
+  - **Automatic Build Variables**: Commands now export BUILD_TIME and VERSION automatically
+  - **Service Health Monitoring**: Added compose-status command for checking service health
+  - **Clean Service Management**: Complete lifecycle management with compose-up/down/restart/logs
+
+- ✅ **Health Handler Architecture Refactoring**: Improved separation of concerns and health check capabilities
+  - **Dedicated HealthHandler**: Created separate `health_handler.go` for all health-related endpoints
+  - **Comprehensive Health Checks**: Three distinct health endpoints with different purposes
+    - **Basic Health (`/health`)**: Essential health status with database connectivity check
+    - **Readiness Check (`/health/ready`)**: Comprehensive readiness with database and migration validation
+    - **Liveness Check (`/health/live`)**: Lightweight check for container orchestration
+  - **Database Health Validation**: Real database connectivity and query execution testing
+  - **Migration Status Verification**: Automated check for required database tables and schema integrity
+  - **Proper Separation of Concerns**: Removed health logic from authentication handler
+  - **Production-Ready Health Checks**: Response time measurement, error handling, and timeout management
+  - **Complete Documentation**: All health endpoints documented in Swagger with proper response schemas
+
+### 📊 **Postman Collection Validated**
+- ✅ **13 Total Endpoints**: All endpoints including new profile update
+- ✅ **4 Folder Categories**: Well-organized request structure
+- ✅ **Automated Tests**: 13 test scripts with comprehensive validation
+- ✅ **Environment Variables**: 8 configured variables for different environments
+- ✅ **Base URL Consistency**: All endpoints use `{{base_url}}` variable
+- ✅ **Authentication Flow**: Complete token-based authentication testing
+- ✅ **Update Profile Testing**: Comprehensive tests for profile update endpoint
 
 ## 🗄️ **DATABASE SCHEMA**
 
@@ -138,7 +200,7 @@
 - [ ] Add log aggregation
 
 ### Documentation
-- [ ] Add Swagger/OpenAPI spec generation
+- [x] Add Swagger/OpenAPI spec generation
 - [x] Add Postman collection
 - [x] Add architecture diagrams
 - [ ] Add runbooks

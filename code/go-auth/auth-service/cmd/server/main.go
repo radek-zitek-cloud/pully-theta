@@ -24,6 +24,45 @@ import (
 	"auth-service/internal/service"
 )
 
+// Version information injected at build time via ldflags
+// These variables provide comprehensive build and version metadata
+// for monitoring, debugging, and operational purposes.
+//
+// Usage in build:
+//
+//	go build -ldflags "-X main.Version=v1.2.3 -X main.BuildTime=2025-06-20T14:30:00Z"
+//
+// The version information is exposed through:
+// - Application logs during startup
+// - Health check endpoints (/health, /health/ready, /health/live)
+// - Swagger documentation metadata
+// - Prometheus metrics labels
+var (
+	// Version is the full version string (e.g., "v1.2.3-build.42+abcd123")
+	Version = "dev"
+
+	// BuildTime is the RFC3339 timestamp when the binary was built
+	BuildTime = "unknown"
+
+	// GitCommit is the short commit hash from git
+	GitCommit = "unknown"
+
+	// GitBranch is the git branch name the build was made from
+	GitBranch = "unknown"
+
+	// BuildUser is the username who built the binary
+	BuildUser = "unknown"
+
+	// BuildHost is the hostname where the binary was built
+	BuildHost = "unknown"
+
+	// SemanticVersion is the semantic version (e.g., "1.2.3")
+	SemanticVersion = "1.0.0"
+
+	// BuildNumber is the incremental build number
+	BuildNumber = "0"
+)
+
 // @title           Authentication Service API
 // @version         1.0.0
 // @description     A comprehensive authentication and user management microservice built with Go and Gin.
@@ -37,7 +76,7 @@ import (
 // @license.name  MIT
 // @license.url   https://opensource.org/licenses/MIT
 
-// @host      localhost:8080
+// @host      localhost:6910
 // @BasePath  /api/v1
 
 // @securityDefinitions.apikey BearerAuth
@@ -85,9 +124,16 @@ func main() {
 	// Initialize structured logger
 	logger := initializeLogger(cfg)
 	logger.WithFields(logrus.Fields{
-		"version":     "1.0.0",
-		"environment": cfg.Server.Environment,
-		"port":        cfg.Server.Port,
+		"version":          Version,
+		"semantic_version": SemanticVersion,
+		"build_number":     BuildNumber,
+		"build_time":       BuildTime,
+		"git_commit":       GitCommit,
+		"git_branch":       GitBranch,
+		"build_user":       BuildUser,
+		"build_host":       BuildHost,
+		"environment":      cfg.Server.Environment,
+		"port":             cfg.Server.Port,
 	}).Info("Starting authentication service")
 
 	// Connect to PostgreSQL database
@@ -160,8 +206,29 @@ func main() {
 		logger.WithError(err).Fatal("Failed to initialize auth handler")
 	}
 
+	// Create version information for health handler
+	versionInfo := &api.VersionInfo{
+		Version:         Version,
+		SemanticVersion: SemanticVersion,
+		BuildNumber:     BuildNumber,
+		BuildTime:       BuildTime,
+		GitCommit:       GitCommit,
+		GitBranch:       GitBranch,
+		BuildUser:       BuildUser,
+		BuildHost:       BuildHost,
+	}
+
+	// Initialize health handler with version information
+	healthHandler := api.NewHealthHandler(db, logger, versionInfo)
+
+	// Initialize metrics handler
+	metricsHandler, err := api.NewMetricsHandler(logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize metrics handler")
+	}
+
 	// Set up HTTP router with middleware
-	router := setupRouter(cfg, authHandler, logger)
+	router := setupRouter(cfg, authHandler, healthHandler, metricsHandler, logger)
 
 	// Create HTTP server with timeouts
 	server := &http.Server{
@@ -321,17 +388,19 @@ func initializeDatabase(cfg *config.Config, logger *logrus.Logger) (*sql.DB, err
 // 5. Error recovery and handling
 //
 // Routes:
-// - Public routes: health check, register, login, password reset
+// - Public routes: health check, register, login, password reset, metrics
 // - Protected routes: logout, profile, password change, token refresh
 //
 // Parameters:
 //   - cfg: Application configuration
 //   - authHandler: Handler for authentication endpoints
+//   - healthHandler: Handler for health check endpoints
+//   - metricsHandler: Handler for Prometheus metrics endpoint
 //   - logger: Logger for middleware and request logging
 //
 // Returns:
 //   - Configured Gin router with all routes and middleware
-func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, logger *logrus.Logger) *gin.Engine {
+func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, healthHandler *api.HealthHandler, metricsHandler *api.MetricsHandler, logger *logrus.Logger) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -351,14 +420,22 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, logger *logru
 	router.Use(corsMiddleware(cfg))
 	router.Use(securityHeadersMiddleware())
 
-	// Health check endpoint (no authentication required)
-	router.GET("/health", authHandler.HealthCheck)
-	router.GET("/health/live", authHandler.HealthCheck)
-	router.GET("/health/ready", authHandler.HealthCheck)
+	// Backward compatibility: Health and metrics endpoints at root level
+	// These are commonly expected by monitoring systems and load balancers
+	router.GET("/health", healthHandler.HealthCheck)
+	router.GET("/health/live", healthHandler.LivenessCheck)
+	router.GET("/health/ready", healthHandler.ReadinessCheck)
+	router.GET("/metrics", metricsHandler.ServeHTTP)
 
 	// API version 1 routes
 	v1 := router.Group("/api/v1")
 	{
+		// Health and metrics endpoints under versioned API for consistency
+		v1.GET("/health", healthHandler.HealthCheck)
+		v1.GET("/health/live", healthHandler.LivenessCheck)
+		v1.GET("/health/ready", healthHandler.ReadinessCheck)
+		v1.GET("/metrics", metricsHandler.ServeHTTP)
+
 		// Authentication routes (public)
 		auth := v1.Group("/auth")
 		{
@@ -371,8 +448,8 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, logger *logru
 			}
 
 			// Public routes that allow both authenticated and unauthenticated users
-			auth.POST("/reset-password", authHandler.ResetPassword)
-			auth.POST("/confirm-reset-password", authHandler.ConfirmResetPassword)
+			auth.POST("/password/forgot", authHandler.ResetPassword)
+			auth.POST("/password/reset", authHandler.ConfirmResetPassword)
 
 			// Refresh token endpoint - special case, validates refresh tokens
 			auth.POST("/refresh", authHandler.RefreshToken)
@@ -382,9 +459,10 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, logger *logru
 			protected.Use(jwtMiddleware.RequireAuth())
 			{
 				protected.GET("/me", authHandler.Me)
+				protected.PUT("/me", authHandler.UpdateProfile)
 				protected.POST("/logout", authHandler.Logout)
 				protected.POST("/logout-all", authHandler.LogoutAll)
-				protected.POST("/change-password", authHandler.ChangePassword)
+				protected.PUT("/password/change", authHandler.ChangePassword)
 			}
 		}
 	}

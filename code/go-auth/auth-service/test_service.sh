@@ -125,7 +125,7 @@ trap cleanup EXIT
 # Wait for service to start
 echo "⏳ Waiting for service to start..."
 for i in {1..30}; do
-    if curl -s http://localhost:8080/health >/dev/null 2>&1; then
+    if curl -s http://localhost:6910/health >/dev/null 2>&1; then
         echo "✅ Service is ready"
         break
     fi
@@ -133,7 +133,7 @@ for i in {1..30}; do
 done
 
 # Check if service started successfully
-if ! curl -s http://localhost:8080/health >/dev/null 2>&1; then
+if ! curl -s http://localhost:6910/health >/dev/null 2>&1; then
     echo "❌ Service failed to start"
     exit 1
 fi

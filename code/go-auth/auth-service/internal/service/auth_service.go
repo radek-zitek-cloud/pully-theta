@@ -101,7 +101,7 @@ type RateLimitService interface {
 	// CheckPasswordResetAttempts checks if password reset requests are within limits.
 	//
 	// Parameters:
-	//   - ctx: Context for cancellation and timeouts
+	//   - ctx: Context for cancellation and time
 	//   - email: Email address to check
 	//
 	// Returns:
@@ -614,6 +614,202 @@ func (s *AuthService) RefreshToken(ctx context.Context, req *domain.RefreshToken
 	return response, nil
 }
 
+// GetUserByID retrieves a user by their unique identifier.
+// This method is used for profile operations and user validation.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - id: User's unique identifier as string (UUID format)
+//
+// Returns:
+//   - User entity if found
+//   - ErrUserNotFound if user doesn't exist
+//   - Database error if operation fails
+//
+// Security considerations:
+// - Only active users are returned
+// - Soft-deleted users are treated as not found
+//
+// Time Complexity: O(1) with proper database indexing
+// Space Complexity: O(1)
+func (s *AuthService) GetUserByID(ctx context.Context, id string) (*domain.User, error) {
+	// Parse and validate UUID
+	userID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("invalid user ID format: %w", err)
+	}
+
+	// Retrieve user from repository
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user by ID: %w", err)
+	}
+
+	// Check if user is active (not soft-deleted)
+	if user.IsDeleted() {
+		return nil, domain.ErrUserNotFound
+	}
+
+	return user, nil
+}
+
+// GetUserByEmail retrieves a user by their email address.
+// This method is used for email uniqueness validation and user lookup.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - email: User's email address
+//
+// Returns:
+//   - User entity if found
+//   - ErrUserNotFound if user doesn't exist
+//   - Database error if operation fails
+//
+// Security considerations:
+// - Email lookup is case-insensitive
+// - Only active users are returned
+// - Soft-deleted users are treated as not found
+//
+// Time Complexity: O(1) with proper database indexing
+// Space Complexity: O(1)
+func (s *AuthService) GetUserByEmail(ctx context.Context, email string) (*domain.User, error) {
+	// Normalize email for consistent lookup
+	normalizedEmail := s.normalizeEmail(email)
+
+	// Retrieve user from repository
+	user, err := s.userRepo.GetByEmail(ctx, normalizedEmail)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user by email: %w", err)
+	}
+
+	// Check if user is active (not soft-deleted)
+	if user.IsDeleted() {
+		return nil, domain.ErrUserNotFound
+	}
+
+	return user, nil
+}
+
+// UpdateProfile updates a user's profile information with partial update support.
+// This method handles field validation, uniqueness checks, and audit logging.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - userID: User's unique identifier as string (UUID format)
+//   - updateData: Map of fields to update (only provided fields are changed)
+//
+// Returns:
+//   - Error if update fails or validation errors occur
+//
+// Supported update fields:
+//   - email: Triggers email verification reset
+//   - first_name: User's given name
+//   - last_name: User's family name
+//   - updated_at: Automatically set to current timestamp
+//
+// Security considerations:
+// - Email uniqueness is enforced
+// - Input validation is performed
+// - All updates are logged for audit purposes
+// - Only the user themselves can update their profile
+//
+// Business rules:
+// - Email changes require re-verification (is_email_verified = false)
+// - Updates are atomic (all or nothing)
+// - Partial updates are supported (only provided fields are changed)
+//
+// Time Complexity: O(1) for the update operation
+// Space Complexity: O(1)
+func (s *AuthService) UpdateProfile(ctx context.Context, userID string, updateData map[string]interface{}) error {
+	// Parse and validate UUID
+	parsedUserID, err := uuid.Parse(userID)
+	if err != nil {
+		return fmt.Errorf("invalid user ID format: %w", err)
+	}
+
+	// Verify user exists and is active
+	existingUser, err := s.userRepo.GetByID(ctx, parsedUserID)
+	if err != nil {
+		return fmt.Errorf("failed to get user for update: %w", err)
+	}
+
+	if existingUser.IsDeleted() {
+		return domain.ErrUserNotFound
+	}
+
+	// Create updated user entity with changes
+	updatedUser := *existingUser
+
+	// Apply updates field by field with validation
+	for field, value := range updateData {
+		switch field {
+		case "email":
+			if email, ok := value.(string); ok {
+				normalizedEmail := s.normalizeEmail(email)
+				// Check email uniqueness only if it's different from current
+				if normalizedEmail != existingUser.Email {
+					_, err := s.userRepo.GetByEmail(ctx, normalizedEmail)
+					if err == nil {
+						return domain.ErrEmailExists
+					}
+					if err != domain.ErrUserNotFound {
+						return fmt.Errorf("failed to check email uniqueness: %w", err)
+					}
+				}
+				updatedUser.Email = normalizedEmail
+				updatedUser.IsEmailVerified = false // Email changes require re-verification
+			} else {
+				return fmt.Errorf("invalid email field type")
+			}
+
+		case "first_name":
+			if firstName, ok := value.(string); ok {
+				if len(firstName) == 0 || len(firstName) > 100 {
+					return fmt.Errorf("first name must be between 1 and 100 characters")
+				}
+				updatedUser.FirstName = firstName
+			} else {
+				return fmt.Errorf("invalid first_name field type")
+			}
+
+		case "last_name":
+			if lastName, ok := value.(string); ok {
+				if len(lastName) == 0 || len(lastName) > 100 {
+					return fmt.Errorf("last name must be between 1 and 100 characters")
+				}
+				updatedUser.LastName = lastName
+			} else {
+				return fmt.Errorf("invalid last_name field type")
+			}
+
+		case "updated_at":
+			if timestamp, ok := value.(time.Time); ok {
+				updatedUser.UpdatedAt = timestamp
+			} else {
+				return fmt.Errorf("invalid updated_at field type")
+			}
+
+		case "is_email_verified":
+			if verified, ok := value.(bool); ok {
+				updatedUser.IsEmailVerified = verified
+			} else {
+				return fmt.Errorf("invalid is_email_verified field type")
+			}
+
+		default:
+			return fmt.Errorf("unsupported update field: %s", field)
+		}
+	}
+
+	// Perform the update
+	_, err = s.userRepo.Update(ctx, &updatedUser)
+	if err != nil {
+		return fmt.Errorf("failed to update user profile: %w", err)
+	}
+
+	return nil
+}
+
 // Helper method to generate secure random tokens
 func (s *AuthService) generateSecureToken(length int) (string, error) {
 	bytes := make([]byte, length)
@@ -716,4 +912,36 @@ func (s *AuthService) auditLog(ctx context.Context, userID *uuid.UUID, eventType
 	if _, err := s.auditRepo.Create(ctx, auditEntry); err != nil {
 		s.logger.WithError(err).Error("Failed to create audit log entry")
 	}
+}
+
+// LogAuditEvent logs an audit event for security and compliance purposes.
+// This method provides a public interface to the audit logging functionality.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - auditLog: Audit log entry to record
+//
+// Returns:
+//   - Error if audit logging fails
+//
+// Note: This method should be non-blocking for the calling operation.
+// Audit logging failures should not fail the primary business operation.
+func (s *AuthService) LogAuditEvent(ctx context.Context, auditLog *domain.AuditLog) error {
+	// Generate ID if not provided
+	if auditLog.ID == uuid.Nil {
+		auditLog.ID = uuid.New()
+	}
+
+	// Set timestamp if not provided
+	if auditLog.CreatedAt.IsZero() {
+		auditLog.CreatedAt = time.Now()
+	}
+
+	// Create the audit log entry
+	_, err := s.auditRepo.Create(ctx, auditLog)
+	if err != nil {
+		return fmt.Errorf("failed to create audit log: %w", err)
+	}
+
+	return nil
 }

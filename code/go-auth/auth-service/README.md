@@ -1,6 +1,6 @@
 # Go Authentication Microservice
 
-A production-ready, scalable authentication microservice built with Go, featuring JWT tokens, PostgreSQL persistence, and comprehensive security measures.
+A production-ready, scalable authentication microservice built with Go, featuring JWT tokens, PostgreSQL persistence, Swagger UI documentation, and comprehensive security measures.
 
 ## 🎯 Overview
 
@@ -8,6 +8,7 @@ This microservice provides a complete authentication solution with:
 - User registration and login
 - JWT access and refresh token management
 - Password reset functionality
+- **Interactive Swagger UI API documentation**
 - Audit logging
 - Rate limiting and security middleware
 - Clean architecture design
@@ -56,7 +57,35 @@ This includes:
 - 📊 Data flow patterns and error handling
 - 🔍 Monitoring and observability setup
 
-## 🚀 Quick Start
+## �️ Technology Stack
+
+### Core Technologies
+- **Language**: Go 1.24+
+- **Web Framework**: Gin (high-performance HTTP router)
+- **Database**: PostgreSQL 12+ (ACID compliance, advanced features)
+- **Cache**: Redis (sessions, rate limiting)
+- **Authentication**: JWT tokens with RS256/HS256 signing
+
+### Documentation & Testing
+- **API Documentation**: Swagger/OpenAPI 3.0 with interactive UI
+- **Code Generation**: Swaggo for automatic API documentation
+- **Testing**: Built-in Go testing with testify
+- **Validation**: Go-playground validator for request validation
+
+### Security & Monitoring
+- **Password Hashing**: bcrypt with configurable cost
+- **Rate Limiting**: Redis-based distributed rate limiting
+- **CORS**: Configurable cross-origin resource sharing
+- **Audit Logging**: Comprehensive request/response logging
+- **Metrics**: Prometheus-compatible metrics export
+
+### DevOps & Infrastructure
+- **Containerization**: Docker with multi-stage builds
+- **Orchestration**: Docker Compose, Kubernetes ready
+- **Database Migrations**: SQL-based versioned migrations
+- **Hot Reload**: Air for development live reloading
+
+## �🚀 Quick Start
 
 ### Prerequisites
 - Go 1.24 or higher
@@ -92,17 +121,25 @@ This includes:
    make run
    ```
 
+6. **Access the API**
+   - 🌐 **Service**: http://localhost:8080
+   - 📖 **Swagger UI**: http://localhost:8080/swagger/index.html
+   - 💗 **Health Check**: http://localhost:6910/health
+
 ### Docker Development
 
 ```bash
-# Start all services
-make docker-up
+# Full development environment with Docker Compose
+make compose-up         # Start all services (builds if needed)
+make compose-down       # Stop all services
+make compose-status     # Check service health
+make compose-logs       # View logs from all services
+make compose-restart    # Restart all services
 
-# View logs
-make docker-logs
-
-# Stop services
-make docker-down
+# Traditional Docker commands (single service)
+make docker-up          # Start app with external PostgreSQL
+make docker-logs        # View app logs  
+make docker-down        # Stop app
 ```
 
 ## 📊 Database Schema
@@ -156,6 +193,17 @@ make docker-down
 ```
 
 ## 🔌 API Endpoints
+
+### 📖 Interactive API Documentation
+
+**🚀 Swagger UI: [http://localhost:8080/swagger/index.html](http://localhost:8080/swagger/index.html)**
+
+The service includes comprehensive **Swagger/OpenAPI 3.0 documentation** with:
+- ✅ Interactive API testing interface
+- ✅ Complete request/response schemas
+- ✅ Authentication examples with JWT Bearer tokens
+- ✅ Detailed error response documentation
+- ✅ Real-time API validation
 
 ### Authentication
 
@@ -495,14 +543,68 @@ See `postman/README.md` for complete documentation and advanced usage.
 
 ### Health Checks
 
-#### GET /health
-Basic health check endpoint.
+The service provides three distinct health check endpoints for different monitoring needs:
 
-#### GET /health/ready
-Readiness check (database connectivity).
+#### GET /health - Basic Health Check
+Essential health status with database connectivity verification. Suitable for load balancers and basic monitoring.
 
-#### GET /health/live
-Liveness check (service responsiveness).
+**Response Example:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-06-20T14:30:00Z",
+  "version": "1.0.0",
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "response_time_ms": 15,
+      "last_checked": "2025-06-20T14:30:00Z"
+    }
+  }
+}
+```
+
+#### GET /health/ready - Readiness Probe
+Comprehensive readiness check with database connectivity and schema validation. Perfect for Kubernetes readiness probes and deployment validation.
+
+**Response Example:**
+```json
+{
+  "status": "ready",
+  "timestamp": "2025-06-20T14:30:00Z",
+  "version": "1.0.0",
+  "checks": {
+    "database": {
+      "status": "healthy",
+      "response_time_ms": 15,
+      "last_checked": "2025-06-20T14:30:00Z"
+    },
+    "migrations": {
+      "status": "healthy",
+      "response_time_ms": 5,
+      "last_checked": "2025-06-20T14:30:00Z"
+    }
+  }
+}
+```
+
+#### GET /health/live - Liveness Probe
+Lightweight liveness check for container orchestration. Used by Kubernetes liveness probes to determine if the service needs to be restarted.
+
+**Response Example:**
+```json
+{
+  "status": "alive",
+  "timestamp": "2025-06-20T14:30:00Z",
+  "version": "1.0.0"
+}
+```
+
+**Usage Guidelines:**
+- **Load Balancers**: Use `/health` for routing decisions
+- **Kubernetes Readiness**: Use `/health/ready` for pod readiness
+- **Kubernetes Liveness**: Use `/health/live` for restart decisions
+- **Monitoring Systems**: Use `/health` for alerting and dashboards
 
 ### Metrics (Prometheus-compatible)
 
@@ -568,9 +670,20 @@ make test-coverage     # Run tests with coverage
 make lint              # Run linters
 make format            # Format code
 make clean             # Clean build artifacts
+
+# Docker Compose (Full Environment)
+make compose-up        # Start all services with Docker Compose
+make compose-down      # Stop all Docker Compose services
+make compose-status    # Check Docker Compose service health
+make compose-logs      # View Docker Compose logs
+make compose-restart   # Restart Docker Compose services
+
+# Docker (Single Service)  
 make docker-build      # Build Docker image
 make docker-up         # Start Docker services
 make docker-down       # Stop Docker services
+
+# Database Management
 make migrate-up        # Run database migrations
 make migrate-down      # Rollback database migrations
 make migrate-create    # Create new migration
@@ -641,14 +754,305 @@ make run
 
 ```bash
 # Check service health
-curl http://localhost:8080/health
+curl http://localhost:6910/health
 
 # Check readiness
-curl http://localhost:8080/health/ready
+curl http://localhost:6910/health/ready
 
 # Check liveness
-curl http://localhost:8080/health/live
+curl http://localhost:6910/health/live
 ```
+
+## 🔧 Troubleshooting
+
+### Common Issues and Solutions
+
+#### 1. Swagger UI Not Loading
+
+**Problem**: Swagger UI returns 404 or doesn't load properly.
+
+**Solutions:**
+```bash
+# Regenerate documentation
+make docs
+
+# Check if docs files exist
+ls -la docs/
+
+# Serve documentation locally
+make docs-serve
+```
+
+**Expected files in docs/ directory:**
+- `docs.go` - Go definitions
+- `swagger.json` - JSON specification  
+- `swagger.yaml` - YAML specification
+
+#### 2. Database Connection Issues
+
+**Problem**: `connection refused` or `database does not exist` errors.
+
+**Solutions:**
+```bash
+# Check PostgreSQL service
+sudo systemctl status postgresql
+
+# Verify database exists
+psql -U postgres -l
+
+# Check environment variables
+cat .env | grep DB_
+
+# Test connection manually
+psql -h localhost -U your_user -d your_database
+```
+
+#### 3. Authentication Token Issues
+
+**Problem**: `invalid token` or `token expired` errors.
+
+**Solutions:**
+```bash
+# Check token expiration settings in .env
+grep JWT .env
+
+# Verify JWT secret is set
+echo $JWT_SECRET
+
+# Test token generation manually
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"password123"}'
+```
+
+#### 4. Rate Limiting Issues
+
+**Problem**: `too many requests` errors.
+
+**Solutions:**
+```bash
+# Check rate limit configuration
+grep RATE .env
+
+# Reset rate limiting (if using Redis)
+redis-cli FLUSHDB
+
+# Adjust rate limits in configuration
+vim .env  # Modify RATE_LIMIT_* variables
+```
+
+#### 5. CORS Issues
+
+**Problem**: Browser CORS errors when accessing from frontend.
+
+**Solutions:**
+```bash
+# Check CORS configuration in .env
+grep CORS .env
+
+# Verify allowed origins
+curl -H "Origin: http://localhost:3000" \
+     -H "Access-Control-Request-Method: POST" \
+     -H "Access-Control-Request-Headers: Content-Type" \
+     -X OPTIONS http://localhost:8080/api/v1/auth/login
+```
+
+#### 6. Environment Variables Not Loading
+
+**Problem**: Service starts but configuration seems wrong.
+
+**Solutions:**
+```bash
+# Verify .env file exists and has correct format
+cat .env
+
+# Check file permissions
+ls -la .env
+
+# Verify environment loading in code
+go run cmd/server/main.go --debug
+
+# Load environment manually for testing
+source .env && go run cmd/server/main.go
+```
+
+#### 7. Port Conflicts
+
+**Problem**: `address already in use` errors.
+
+**Solutions:**
+```bash
+# Check what's using the port
+sudo netstat -tlnp | grep :8080
+# or
+sudo ss -tlnp | grep :8080
+
+# Kill process using the port
+sudo fuser -k 8080/tcp
+
+# Use different port
+export PORT=8081 && go run cmd/server/main.go
+```
+
+#### 8. SSL/TLS Certificate Issues
+
+**Problem**: HTTPS connection errors or certificate warnings.
+
+**Solutions:**
+```bash
+# Check certificate files exist
+ls -la certs/
+
+# Verify certificate validity
+openssl x509 -in certs/server.crt -text -noout
+
+# Generate self-signed certificates for development
+make generate-certs
+
+# Check TLS configuration
+grep TLS .env
+```
+
+### Debug Mode
+
+Enable debug mode for more detailed logging:
+
+```bash
+# Set debug mode in environment
+export GIN_MODE=debug
+export LOG_LEVEL=debug
+
+# Run with debug flags
+go run cmd/server/main.go --debug
+
+# Check logs
+tail -f tmp/errors.log
+```
+
+### Health Checks
+
+Use the health endpoint to verify service status:
+
+```bash
+# Basic health check
+curl http://localhost:6910/health
+
+# Comprehensive readiness check
+curl http://localhost:6910/health/ready
+
+# Check specific components
+curl http://localhost:8080/health/database
+curl http://localhost:8080/health/redis
+```
+
+### Testing API Endpoints
+
+#### Using cURL
+
+```bash
+# Register new user
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "SecurePass123!",
+    "first_name": "Test",
+    "last_name": "User"
+  }'
+
+# Login user
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "test@example.com",
+    "password": "SecurePass123!"
+  }'
+
+# Access protected endpoint
+curl -X GET http://localhost:8080/api/v1/auth/me \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+
+# Logout user (no request body needed)
+curl -X POST http://localhost:8080/api/v1/auth/logout \
+  -H "Authorization: Bearer YOUR_ACCESS_TOKEN"
+```
+
+#### Using Postman
+
+Import the Postman collection from `/postman` directory:
+
+```bash
+# Navigate to postman directory
+cd postman/
+
+# Import collection and environment
+# See QUICK_START.md for detailed instructions
+```
+
+#### Using Swagger UI
+
+The easiest way to test and explore the API:
+
+```bash
+# Start the main service
+make run
+
+# Open Swagger UI in browser
+open http://localhost:8080/swagger/index.html
+
+# Or serve documentation statically
+make docs-serve
+open http://localhost:8081
+```
+
+### Log Analysis
+
+Common log patterns to look for:
+
+```bash
+# Authentication failures
+grep "authentication failed" tmp/errors.log
+
+# Rate limiting triggers
+grep "rate limit exceeded" tmp/errors.log
+
+# Database connection issues
+grep "database" tmp/errors.log
+
+# Token validation errors
+grep "token" tmp/errors.log
+```
+
+### Performance Monitoring
+
+Monitor key metrics:
+
+```bash
+# Check memory usage
+ps aux | grep auth-service
+
+# Monitor database connections
+psql -U postgres -c "SELECT count(*) FROM pg_stat_activity;"
+
+# Check response times
+curl -w "@curl-format.txt" -o /dev/null -s http://localhost:8080/health
+```
+
+Create `curl-format.txt`:
+```
+time_namelookup:  %{time_namelookup}\n
+time_connect:     %{time_connect}\n
+time_pretransfer: %{time_pretransfer}\n
+time_redirect:    %{time_redirect}\n
+time_starttransfer: %{time_starttransfer}\n
+time_total:       %{time_total}\n
+```
+
+For additional support, check:
+- Service logs in `tmp/errors.log`
+- Database logs in PostgreSQL logs directory
+- System logs: `journalctl -u auth-service`
+- GitHub Issues for community support
 
 ## 🤝 Contributing
 
