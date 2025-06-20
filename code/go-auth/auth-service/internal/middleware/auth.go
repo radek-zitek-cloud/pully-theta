@@ -189,47 +189,81 @@ func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 }
 
 // RequireNoAuth creates a middleware that rejects authenticated requests.
-// This is useful for endpoints like login/register that should only
-// be accessible to unauthenticated users.
+// This middleware allows requests with no authentication or expired/invalid tokens,
+// but rejects requests with valid, non-expired access tokens.
+//
+// Design rationale:
+// - Users with expired tokens should be able to login again
+// - Users with invalid tokens (corrupted, wrong format) should be able to login
+// - Only users with valid, active tokens should be rejected (they're already authenticated)
+//
+// This provides better UX compared to strict rejection of any token presence.
 //
 // Returns:
-//   - Gin middleware function that rejects authenticated requests
+//   - Gin middleware function that rejects only valid authenticated requests
 func (m *JWTMiddleware) RequireNoAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Check if Authorization header is present
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
+			// No auth header, allow request
 			c.Next()
 			return
 		}
 
-		// Extract and validate token
+		// Extract token from header
 		token, err := m.extractTokenFromHeader(c)
 		if err != nil {
-			// Invalid token format, allow request to continue
+			// Invalid token format (not "Bearer <token>"), allow request to continue
+			m.logger.WithFields(logrus.Fields{
+				"ip":     c.ClientIP(),
+				"method": c.Request.Method,
+				"path":   c.Request.URL.Path,
+				"error":  err.Error(),
+			}).Debug("Invalid token format in auth header, allowing request")
 			c.Next()
 			return
 		}
 
-		// Check if token is valid
-		_, err = m.validateToken(token)
+		// Validate token
+		claims, err := m.validateToken(token)
 		if err != nil {
 			// Invalid or expired token, allow request to continue
+			m.logger.WithFields(logrus.Fields{
+				"ip":     c.ClientIP(),
+				"method": c.Request.Method,
+				"path":   c.Request.URL.Path,
+				"error":  err.Error(),
+			}).Debug("Invalid/expired token in auth header, allowing request")
 			c.Next()
 			return
 		}
 
-		// Valid token present, reject request
+		// Token is valid, check if it's an access token
+		if claims.TokenType != "access" {
+			// Not an access token (probably refresh), allow request
+			m.logger.WithFields(logrus.Fields{
+				"ip":         c.ClientIP(),
+				"method":     c.Request.Method,
+				"path":       c.Request.URL.Path,
+				"token_type": claims.TokenType,
+			}).Debug("Non-access token in auth header, allowing request")
+			c.Next()
+			return
+		}
+
+		// Valid access token present, reject request
 		m.logger.WithFields(logrus.Fields{
 			"ip":         c.ClientIP(),
 			"method":     c.Request.Method,
 			"path":       c.Request.URL.Path,
+			"user_id":    claims.UserID,
 			"user_agent": c.GetHeader("User-Agent"),
 		}).Warn("Authenticated user attempted to access auth endpoint")
 
 		c.JSON(http.StatusForbidden, domain.ErrorResponse{
 			Error:     "forbidden",
-			Message:   "This endpoint requires no authentication",
+			Message:   "This endpoint requires no authentication. You are already authenticated.",
 			Timestamp: time.Now(),
 		})
 		c.Abort()

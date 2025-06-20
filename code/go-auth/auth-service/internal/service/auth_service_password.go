@@ -156,7 +156,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, req *domain.ResetPasswo
 	normalizedEmail := s.normalizeEmail(req.Email)
 
 	// Check rate limiting for password reset requests
-	allowed, err := s.rateLimitService.CheckPasswordResetAttempts(ctx, normalizedEmail)
+	allowed, err := s.rateLimitService.CheckLoginAttempts(ctx, normalizedEmail)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to check password reset rate limit")
 		return domain.ErrDatabase
@@ -167,7 +167,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, req *domain.ResetPasswo
 	}
 
 	// Record the reset attempt for rate limiting
-	if err := s.rateLimitService.RecordPasswordResetAttempt(ctx, normalizedEmail); err != nil {
+	if err := s.rateLimitService.RecordLoginAttempt(ctx, normalizedEmail, false); err != nil {
 		s.logger.WithError(err).Warn("Failed to record password reset attempt")
 		// Don't fail the operation for rate limiting issues
 	}

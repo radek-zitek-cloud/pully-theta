@@ -185,6 +185,12 @@ func main() {
 	rateLimitConfig := service.DefaultRateLimitConfig()
 	rateLimitService := service.NewInMemoryRateLimitService(rateLimitConfig, logger)
 
+	// Initialize metrics handler before auth service (needed for metrics recording)
+	metricsHandler, err := api.NewMetricsHandler(logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize metrics handler")
+	}
+
 	// Initialize authentication service
 	authService, err := service.NewAuthService(
 		userRepo,
@@ -195,6 +201,7 @@ func main() {
 		cfg,
 		emailService,
 		rateLimitService,
+		metricsHandler.GetAuthMetricsRecorder(),
 	)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to initialize auth service")
@@ -220,12 +227,6 @@ func main() {
 
 	// Initialize health handler with version information
 	healthHandler := api.NewHealthHandler(db, logger, versionInfo)
-
-	// Initialize metrics handler
-	metricsHandler, err := api.NewMetricsHandler(logger)
-	if err != nil {
-		logger.WithError(err).Fatal("Failed to initialize metrics handler")
-	}
 
 	// Set up HTTP router with middleware
 	router := setupRouter(cfg, authHandler, healthHandler, metricsHandler, logger)
@@ -415,7 +416,8 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, healthHandler
 	jwtMiddleware := middleware.NewJWTMiddleware(cfg, logger)
 
 	// Add global middleware
-	router.Use(gin.Recovery()) // Panic recovery
+	router.Use(gin.Recovery())                               // Panic recovery
+	router.Use(middleware.MetricsMiddleware(metricsHandler)) // HTTP metrics recording
 	router.Use(requestLoggingMiddleware(logger))
 	router.Use(corsMiddleware(cfg))
 	router.Use(securityHeadersMiddleware())

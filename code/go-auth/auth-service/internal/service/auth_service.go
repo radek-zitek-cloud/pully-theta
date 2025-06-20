@@ -25,6 +25,7 @@ import (
 // - Input validation is performed at the service layer
 // - Errors are wrapped with context for better debugging
 // - Security best practices are enforced (password hashing, rate limiting)
+// - Business metrics are recorded for monitoring and alerting
 //
 // Dependencies:
 // - UserRepository: For user data persistence
@@ -33,6 +34,9 @@ import (
 // - AuditLogRepository: For security audit logging
 // - Logger: For structured logging
 // - Config: For service configuration
+// - EmailService: For sending notification emails
+// - RateLimitService: For preventing abuse and brute force attacks
+// - AuthMetricsRecorder: For recording business metrics
 type AuthService struct {
 	userRepo          domain.UserRepository
 	refreshTokenRepo  domain.RefreshTokenRepository
@@ -42,6 +46,7 @@ type AuthService struct {
 	config            *config.Config
 	emailService      EmailService
 	rateLimitService  RateLimitService
+	metricsRecorder   AuthMetricsRecorder
 }
 
 // EmailService defines the interface for sending emails.
@@ -97,28 +102,32 @@ type RateLimitService interface {
 	// Returns:
 	//   - Error if recording fails
 	RecordLoginAttempt(ctx context.Context, identifier string, success bool) error
+}
 
-	// CheckPasswordResetAttempts checks if password reset requests are within limits.
+// AuthMetricsRecorder defines the interface for recording authentication metrics.
+// This abstraction allows the auth service to record business metrics without
+// directly depending on the metrics implementation (Prometheus, etc.).
+type AuthMetricsRecorder interface {
+	// RecordAuthOperation records metrics for authentication operations.
 	//
 	// Parameters:
-	//   - ctx: Context for cancellation and time
-	//   - email: Email address to check
-	//
-	// Returns:
-	//   - true if request is allowed
-	//   - false if rate limit exceeded
-	//   - Error if check fails
-	CheckPasswordResetAttempts(ctx context.Context, email string) (bool, error)
+	//   - operation: Type of auth operation (login, register, logout, refresh)
+	//   - result: Operation result (success, failure, error)
+	RecordAuthOperation(operation, result string)
 
-	// RecordPasswordResetAttempt records a password reset request.
+	// RecordTokenOperation records metrics for JWT token operations.
 	//
 	// Parameters:
-	//   - ctx: Context for cancellation and timeouts
-	//   - email: Email address that requested reset
+	//   - operation: Token operation (generate, validate, refresh, revoke)
+	//   - tokenType: Type of token (access, refresh)
+	//   - result: Operation result (success, failure, error)
+	RecordTokenOperation(operation, tokenType, result string)
+
+	// SetActiveUsers updates the active users gauge.
 	//
-	// Returns:
-	//   - Error if recording fails
-	RecordPasswordResetAttempt(ctx context.Context, email string) error
+	// Parameters:
+	//   - count: Current number of active users
+	SetActiveUsers(count float64)
 }
 
 // NewAuthService creates a new AuthService instance with all dependencies.
@@ -154,6 +163,7 @@ func NewAuthService(
 	config *config.Config,
 	emailService EmailService,
 	rateLimitService RateLimitService,
+	metricsRecorder AuthMetricsRecorder,
 ) (*AuthService, error) {
 	// Validate required dependencies
 	if userRepo == nil {
@@ -180,6 +190,9 @@ func NewAuthService(
 	if rateLimitService == nil {
 		return nil, fmt.Errorf("rate limit service is required")
 	}
+	if metricsRecorder == nil {
+		return nil, fmt.Errorf("metrics recorder is required")
+	}
 
 	return &AuthService{
 		userRepo:          userRepo,
@@ -190,6 +203,7 @@ func NewAuthService(
 		config:            config,
 		emailService:      emailService,
 		rateLimitService:  rateLimitService,
+		metricsRecorder:   metricsRecorder,
 	}, nil
 }
 
@@ -239,6 +253,7 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest,
 	// Validate password strength before processing
 	if err := s.validatePasswordStrength(req.Password); err != nil {
 		s.auditLogFailure(ctx, nil, "user.register.failure", "Password validation failed", clientIP, userAgent, err)
+		s.metricsRecorder.RecordAuthOperation("register", "failure")
 		return nil, err
 	}
 
@@ -247,10 +262,12 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest,
 	existingUser, err := s.userRepo.GetByEmail(ctx, normalizedEmail)
 	if err != nil && err != domain.ErrUserNotFound {
 		s.logger.WithError(err).Error("Failed to check email existence")
+		s.metricsRecorder.RecordAuthOperation("register", "error")
 		return nil, domain.ErrDatabase
 	}
 	if existingUser != nil {
 		s.auditLogFailure(ctx, nil, "user.register.failure", "Email already exists", clientIP, userAgent, domain.ErrEmailExists)
+		s.metricsRecorder.RecordAuthOperation("register", "failure")
 		return nil, domain.ErrEmailExists
 	}
 
@@ -281,6 +298,7 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest,
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to create user")
 		s.auditLogFailure(ctx, nil, "user.register.failure", "Database creation failed", clientIP, userAgent, err)
+		s.metricsRecorder.RecordAuthOperation("register", "error")
 		return nil, domain.ErrDatabase
 	}
 
@@ -296,6 +314,9 @@ func (s *AuthService) Register(ctx context.Context, req *domain.RegisterRequest,
 
 	// Log successful registration
 	s.auditLogSuccess(ctx, &createdUser.ID, "user.register.success", "User registered successfully", clientIP, userAgent)
+
+	// Record successful registration metrics
+	s.metricsRecorder.RecordAuthOperation("register", "success")
 
 	s.logger.WithFields(logrus.Fields{
 		"operation": "register",
@@ -359,6 +380,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	}
 	if !allowed {
 		s.auditLogFailure(ctx, nil, "user.login.failure", "Rate limit exceeded", clientIP, userAgent, domain.ErrRateLimitExceeded)
+		s.metricsRecorder.RecordAuthOperation("login", "failure")
 		return nil, domain.ErrRateLimitExceeded
 	}
 
@@ -369,9 +391,11 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 			// Record failed attempt for rate limiting
 			_ = s.rateLimitService.RecordLoginAttempt(ctx, clientIP, false)
 			s.auditLogFailure(ctx, nil, "user.login.failure", "User not found", clientIP, userAgent, domain.ErrInvalidCredentials)
+			s.metricsRecorder.RecordAuthOperation("login", "failure")
 			return nil, domain.ErrInvalidCredentials
 		}
 		s.logger.WithError(err).Error("Failed to get user by email")
+		s.metricsRecorder.RecordAuthOperation("login", "error")
 		return nil, domain.ErrDatabase
 	}
 
@@ -379,11 +403,13 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	if user.IsDeleted() {
 		_ = s.rateLimitService.RecordLoginAttempt(ctx, clientIP, false)
 		s.auditLogFailure(ctx, &user.ID, "user.login.failure", "Account deleted", clientIP, userAgent, domain.ErrAccountDeleted)
+		s.metricsRecorder.RecordAuthOperation("login", "failure")
 		return nil, domain.ErrInvalidCredentials // Don't reveal account state
 	}
 	if !user.IsActive {
 		_ = s.rateLimitService.RecordLoginAttempt(ctx, clientIP, false)
 		s.auditLogFailure(ctx, &user.ID, "user.login.failure", "Account inactive", clientIP, userAgent, domain.ErrAccountInactive)
+		s.metricsRecorder.RecordAuthOperation("login", "failure")
 		return nil, domain.ErrInvalidCredentials // Don't reveal account state
 	}
 
@@ -391,6 +417,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		_ = s.rateLimitService.RecordLoginAttempt(ctx, clientIP, false)
 		s.auditLogFailure(ctx, &user.ID, "user.login.failure", "Invalid password", clientIP, userAgent, domain.ErrInvalidCredentials)
+		s.metricsRecorder.RecordAuthOperation("login", "failure")
 		return nil, domain.ErrInvalidCredentials
 	}
 
@@ -401,6 +428,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	accessToken, err := s.generateAccessToken(user)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to generate access token")
+		s.metricsRecorder.RecordTokenOperation("generate", "access", "error")
 		return nil, fmt.Errorf("token generation failed: %w", err)
 	}
 
@@ -414,6 +442,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	refreshToken, err := s.generateRefreshToken(user)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to generate refresh token")
+		s.metricsRecorder.RecordTokenOperation("generate", "refresh", "error")
 		return nil, fmt.Errorf("refresh token generation failed: %w", err)
 	}
 
@@ -432,6 +461,7 @@ func (s *AuthService) Login(ctx context.Context, req *domain.LoginRequest, clien
 	_, err = s.refreshTokenRepo.Create(ctx, refreshTokenEntity)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to store refresh token")
+		s.metricsRecorder.RecordTokenOperation("generate", "refresh", "error")
 		return nil, domain.ErrDatabase
 	}
 

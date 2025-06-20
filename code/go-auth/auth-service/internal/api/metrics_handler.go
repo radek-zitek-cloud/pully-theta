@@ -22,6 +22,10 @@ import (
 //
 // All metrics follow Prometheus naming conventions and include relevant labels
 // for filtering and aggregation in monitoring dashboards.
+//
+// Interface Implementations:
+// - MetricsRecorder: For HTTP middleware integration
+// - AuthMetricsRecorder: For auth service integration
 type MetricsHandler struct {
 	logger           *logrus.Logger
 	promRegistry     *prometheus.Registry
@@ -135,6 +139,21 @@ func NewMetricsHandler(logger *logrus.Logger) (*MetricsHandler, error) {
 
 	logger.Info("Metrics handler initialized with Prometheus collectors")
 	return handler, nil
+}
+
+// GetAuthMetricsRecorder returns the metrics handler as an AuthMetricsRecorder interface.
+// This method provides a type-safe way for the auth service to record business metrics
+// without directly depending on the full MetricsHandler implementation.
+//
+// Returns:
+//   - AuthMetricsRecorder interface for recording auth-specific metrics
+//
+// Example:
+//
+//	authMetrics := metricsHandler.GetAuthMetricsRecorder()
+//	authService := service.NewAuthService(userRepo, ..., authMetrics)
+func (m *MetricsHandler) GetAuthMetricsRecorder() AuthMetricsRecorder {
+	return m
 }
 
 // ServeHTTP handles the /metrics endpoint to expose Prometheus metrics.
@@ -270,4 +289,18 @@ func (m *MetricsHandler) updateDatabaseMetrics() {
 	m.dbConnections.WithLabelValues("in_use").Set(5)
 	m.dbConnections.WithLabelValues("max_open").Set(25)
 	m.dbConnections.WithLabelValues("max_idle").Set(10)
+}
+
+// AuthMetricsRecorder defines the interface for recording authentication metrics.
+// This interface allows the auth service to record business metrics without
+// directly depending on the metrics implementation.
+type AuthMetricsRecorder interface {
+	// RecordAuthOperation records metrics for authentication operations.
+	RecordAuthOperation(operation, result string)
+
+	// RecordTokenOperation records metrics for JWT token operations.
+	RecordTokenOperation(operation, tokenType, result string)
+
+	// SetActiveUsers updates the active users gauge.
+	SetActiveUsers(count float64)
 }
