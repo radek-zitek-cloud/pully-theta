@@ -1,0 +1,822 @@
+{
+  "info": {
+    "name": "Go Authentication Microservice",
+    "description": "**Complete API collection for the Go Authentication Microservice**\n\n## 🎯 Overview\nThis collection provides comprehensive testing capabilities for all authentication endpoints including user registration, login, password management, and health monitoring.\n\n## 🔧 Setup Instructions\n1. Import the companion environment file: `Go-Auth-Environment.postman_environment.json`\n2. Set the `base_url` variable to your service URL (default: `http://localhost:8080`)\n3. Run the authentication flow to automatically set tokens\n\n## 🏗️ Collection Structure\n- **Authentication**: Registration, login, logout, token refresh\n- **Password Management**: Change, reset, forgot password\n- **User Profile**: Get and update user information\n- **Health & Monitoring**: Health checks and metrics\n\n## 🔐 Authentication Flow\n1. Register a new user or use existing credentials\n2. Login to get access and refresh tokens (automatically stored)\n3. Use authenticated endpoints with auto-injected bearer tokens\n4. Refresh tokens when they expire\n\n## ✅ Automated Testing\nEach request includes comprehensive tests that:\n- Validate HTTP status codes\n- Check response structure and data types\n- Store tokens and user data automatically\n- Verify business logic constraints\n\n## 📚 Documentation\nEach endpoint includes:\n- Detailed descriptions and use cases\n- Request/response examples\n- Security considerations\n- Error handling scenarios",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "auth-microservice-collection",
+    "version": {
+      "major": 1,
+      "minor": 0,
+      "patch": 0
+    }
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "exec": [
+          "// Global pre-request script for the Authentication Microservice",
+          "// Automatically handles token refresh and request preparation",
+          "",
+          "// Generate unique request ID for tracking",
+          "if (!pm.globals.get('request_id')) {",
+          "    const requestId = 'req_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);",
+          "    pm.globals.set('request_id', requestId);",
+          "}",
+          "",
+          "// Set correlation ID header for request tracing",
+          "pm.request.headers.add({",
+          "    key: 'X-Request-ID',",
+          "    value: pm.globals.get('request_id')",
+          "});",
+          "",
+          "console.log('🚀 Request initiated:', pm.info.requestName);"
+        ],
+        "type": "text/javascript"
+      }
+    },
+    {
+      "listen": "test",
+      "script": {
+        "exec": [
+          "// Global test script for the Authentication Microservice",
+          "// Provides common test functions and validations",
+          "",
+          "// Helper function to validate error response structure",
+          "function validateErrorResponse() {",
+          "    const response = pm.response.json();",
+          "    pm.test('Error response has required fields', function() {",
+          "        pm.expect(response).to.have.property('error');",
+          "        pm.expect(response).to.have.property('message');",
+          "        pm.expect(response).to.have.property('timestamp');",
+          "    });",
+          "}",
+          "",
+          "// Helper function to validate success response",
+          "function validateSuccessResponse() {",
+          "    pm.test('Response time is acceptable', function() {",
+          "        pm.expect(pm.response.responseTime).to.be.below(5000);",
+          "    });",
+          "    ",
+          "    pm.test('Response has JSON content type', function() {",
+          "        pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+          "    });",
+          "}",
+          "",
+          "// Validate response based on status code",
+          "if (pm.response.code >= 400) {",
+          "    validateErrorResponse();",
+          "} else {",
+          "    validateSuccessResponse();",
+          "}",
+          "",
+          "console.log('✅ Test completed for:', pm.info.requestName, 'Status:', pm.response.code);"
+        ],
+        "type": "text/javascript"
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "{{base_url}}",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "🔐 Authentication",
+      "description": "**User Authentication Endpoints**\n\nManages user registration, login, logout, and token refresh operations. These endpoints form the core of the authentication system.",
+      "item": [
+        {
+          "name": "Register New User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for user registration endpoint",
+                  "pm.test('Registration successful', function() {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Response contains auth tokens', function() {",
+                  "        pm.expect(response).to.have.property('access_token');",
+                  "        pm.expect(response).to.have.property('refresh_token');",
+                  "        pm.expect(response).to.have.property('token_type', 'Bearer');",
+                  "        pm.expect(response).to.have.property('expires_in');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Response contains user data', function() {",
+                  "        pm.expect(response).to.have.property('user');",
+                  "        pm.expect(response.user).to.have.property('id');",
+                  "        pm.expect(response.user).to.have.property('email');",
+                  "        pm.expect(response.user).to.have.property('first_name');",
+                  "        pm.expect(response.user).to.have.property('last_name');",
+                  "    });",
+                  "    ",
+                  "    // Store tokens for subsequent requests",
+                  "    pm.environment.set('access_token', response.access_token);",
+                  "    pm.environment.set('refresh_token', response.refresh_token);",
+                  "    pm.environment.set('user_id', response.user.id);",
+                  "    pm.environment.set('user_email', response.user.email);",
+                  "    ",
+                  "    console.log('✅ User registered successfully:', response.user.email);",
+                  "} else {",
+                  "    console.log('❌ Registration failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"password_confirm\": \"{{test_password}}\",\n  \"first_name\": \"Test\",\n  \"last_name\": \"User\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/register",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "register"]
+            },
+            "description": "**Register a new user account**\n\n### Purpose\nCreates a new user account with email verification and returns authentication tokens.\n\n### Request Body\n- `email`: Valid email address (unique)\n- `password`: Minimum 8 characters with complexity requirements\n- `password_confirm`: Must match password field\n- `first_name`: User's given name\n- `last_name`: User's family name\n\n### Security Features\n- Password hashing with bcrypt\n- Email uniqueness validation\n- Input sanitization and validation\n- Rate limiting protection\n\n### Success Response (201)\n- Returns JWT access and refresh tokens\n- Includes user profile information\n- Tokens are automatically stored for subsequent requests\n\n### Error Responses\n- **400**: Validation errors (duplicate email, weak password)\n- **429**: Rate limit exceeded\n- **500**: Internal server error"
+          }
+        },
+        {
+          "name": "User Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for user login endpoint",
+                  "pm.test('Login successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Response contains valid auth tokens', function() {",
+                  "        pm.expect(response).to.have.property('access_token');",
+                  "        pm.expect(response).to.have.property('refresh_token');",
+                  "        pm.expect(response.access_token).to.match(/^[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+\\.[A-Za-z0-9\\-_]+$/);",
+                  "        pm.expect(response.token_type).to.equal('Bearer');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Token expiry is reasonable', function() {",
+                  "        pm.expect(response.expires_in).to.be.a('number');",
+                  "        pm.expect(response.expires_in).to.be.greaterThan(0);",
+                  "        pm.expect(response.expires_in).to.be.lessThan(3600); // Less than 1 hour",
+                  "    });",
+                  "    ",
+                  "    // Store authentication data",
+                  "    pm.environment.set('access_token', response.access_token);",
+                  "    pm.environment.set('refresh_token', response.refresh_token);",
+                  "    pm.environment.set('user_id', response.user.id);",
+                  "    ",
+                  "    console.log('✅ Login successful for user:', response.user.email);",
+                  "} else {",
+                  "    console.log('❌ Login failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\",\n  \"password\": \"{{test_password}}\",\n  \"remember_me\": false\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/login",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "login"]
+            },
+            "description": "**Authenticate user and obtain tokens**\n\n### Purpose\nAuthenticates user credentials and returns JWT tokens for API access.\n\n### Request Body\n- `email`: User's registered email address\n- `password`: User's password\n- `remember_me`: Optional, extends refresh token lifetime\n\n### Authentication Process\n1. Validates email and password\n2. Generates JWT access token (15 minutes)\n3. Generates refresh token (7 days or extended)\n4. Updates last login timestamp\n5. Logs authentication event\n\n### Security Features\n- Password verification with bcrypt\n- Rate limiting for brute force protection\n- Audit logging for security monitoring\n- Secure token generation\n\n### Success Response (200)\n- JWT access token for API authentication\n- Refresh token for token renewal\n- User profile information\n- Token metadata (type, expiry)\n\n### Error Responses\n- **401**: Invalid credentials\n- **429**: Rate limit exceeded (too many failed attempts)\n- **500**: Internal server error"
+          }
+        },
+        {
+          "name": "Refresh Access Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for token refresh endpoint",
+                  "pm.test('Token refresh successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('New tokens are provided', function() {",
+                  "        pm.expect(response).to.have.property('access_token');",
+                  "        pm.expect(response).to.have.property('refresh_token');",
+                  "        pm.expect(response.access_token).to.not.equal(pm.environment.get('access_token'));",
+                  "    });",
+                  "    ",
+                  "    // Update stored tokens",
+                  "    pm.environment.set('access_token', response.access_token);",
+                  "    pm.environment.set('refresh_token', response.refresh_token);",
+                  "    ",
+                  "    console.log('✅ Tokens refreshed successfully');",
+                  "} else {",
+                  "    console.log('❌ Token refresh failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "refresh"]
+            },
+            "description": "**Refresh expired access token**\n\n### Purpose\nExchanges a valid refresh token for new access and refresh tokens.\n\n### Request Body\n- `refresh_token`: Valid JWT refresh token\n\n### Token Refresh Process\n1. Validates refresh token signature and expiry\n2. Checks if token is revoked or blacklisted\n3. Generates new access token (15 minutes)\n4. Generates new refresh token (maintains original expiry)\n5. Invalidates old refresh token\n\n### Security Features\n- Token rotation (old tokens are invalidated)\n- Refresh token validation and verification\n- Automatic token blacklisting\n- Rate limiting protection\n\n### Success Response (200)\n- New JWT access token\n- New refresh token\n- Updated token metadata\n\n### Error Responses\n- **401**: Invalid or expired refresh token\n- **403**: Token revoked or blacklisted\n- **429**: Rate limit exceeded"
+          }
+        },
+        {
+          "name": "User Logout",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for user logout endpoint",
+                  "pm.test('Logout successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Success message returned', function() {",
+                  "        pm.expect(response).to.have.property('message');",
+                  "        pm.expect(response.success).to.be.true;",
+                  "    });",
+                  "    ",
+                  "    // Clear stored tokens",
+                  "    pm.environment.unset('access_token');",
+                  "    pm.environment.unset('refresh_token');",
+                  "    ",
+                  "    console.log('✅ User logged out successfully');",
+                  "} else {",
+                  "    console.log('❌ Logout failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": ""
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/logout",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "logout"]
+            },
+            "description": "**Logout user and revoke tokens**\n\n### Purpose\nSecurely logs out the user by revoking their access and refresh tokens.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Logout Process\n1. Validates access token\n2. Revokes/blacklists current access token\n3. Revokes all refresh tokens for the user\n4. Logs logout event for audit trail\n5. Clears any server-side session data\n\n### Security Features\n- Token revocation and blacklisting\n- Complete session termination\n- Audit logging for security monitoring\n- Prevents token reuse after logout\n\n### Success Response (200)\n- Confirmation message\n- Success status indicator\n\n### Error Responses\n- **401**: Invalid or expired access token\n- **500**: Internal server error"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🔑 Password Management",
+      "description": "**Password Management Endpoints**\n\nHandles password changes, resets, and forgot password functionality with secure token-based workflows.",
+      "item": [
+        {
+          "name": "Change Password",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for password change endpoint",
+                  "pm.test('Password change successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Success confirmation returned', function() {",
+                  "        pm.expect(response).to.have.property('message');",
+                  "        pm.expect(response.success).to.be.true;",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Password changed successfully');",
+                  "} else if (pm.response.code === 400) {",
+                  "    pm.test('Validation error handled correctly', function() {",
+                  "        const response = pm.response.json();",
+                  "        pm.expect(response).to.have.property('error');",
+                  "        pm.expect(response).to.have.property('message');",
+                  "    });",
+                  "} else {",
+                  "    console.log('❌ Password change failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"current_password\": \"{{test_password}}\",\n  \"new_password\": \"NewSecurePassword123!\",\n  \"new_password_confirm\": \"NewSecurePassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/password/change",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "password", "change"]
+            },
+            "description": "**Change user password (authenticated)**\n\n### Purpose\nAllows authenticated users to change their password by providing current password verification.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Request Body\n- `current_password`: User's current password for verification\n- `new_password`: New password (min 8 chars, complexity requirements)\n- `new_password_confirm`: Must match new password\n\n### Password Change Process\n1. Validates access token and extracts user ID\n2. Verifies current password against stored hash\n3. Validates new password strength requirements\n4. Hashes new password with bcrypt\n5. Updates password in database\n6. Logs password change event\n7. Optionally revokes existing refresh tokens\n\n### Security Features\n- Current password verification prevents unauthorized changes\n- Password strength validation\n- Secure bcrypt hashing\n- Audit logging for security monitoring\n- Rate limiting protection\n\n### Success Response (200)\n- Confirmation message\n- Success status indicator\n\n### Error Responses\n- **400**: Validation errors (weak password, confirmation mismatch)\n- **401**: Invalid access token or incorrect current password\n- **429**: Rate limit exceeded"
+          }
+        },
+        {
+          "name": "Forgot Password Request",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for forgot password endpoint",
+                  "pm.test('Forgot password request accepted', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Success message returned', function() {",
+                  "        pm.expect(response).to.have.property('message');",
+                  "        pm.expect(response.success).to.be.true;",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Password reset email sent (if email exists)');",
+                  "} else {",
+                  "    console.log('❌ Forgot password request failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{test_email}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/password/forgot",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "password", "forgot"]
+            },
+            "description": "**Request password reset token**\n\n### Purpose\nInitiates password reset process by sending a secure token to the user's email.\n\n### Request Body\n- `email`: User's registered email address\n\n### Reset Token Process\n1. Validates email format\n2. Checks if user exists (without revealing this info)\n3. Generates secure reset token (UUID + timestamp)\n4. Stores token with expiration (15 minutes)\n5. Sends reset email with token link\n6. Returns success message regardless of email existence\n\n### Security Features\n- Rate limiting to prevent abuse\n- Token expiration (15 minutes)\n- No user enumeration (same response for valid/invalid emails)\n- Secure token generation\n- Email delivery with secure links\n\n### Success Response (200)\n- Generic success message\n- No indication if email exists or not\n\n### Error Responses\n- **400**: Invalid email format\n- **429**: Rate limit exceeded (too many requests)\n- **500**: Email service error"
+          }
+        },
+        {
+          "name": "Reset Password with Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for password reset endpoint",
+                  "pm.test('Password reset successful', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Success confirmation returned', function() {",
+                  "        pm.expect(response).to.have.property('message');",
+                  "        pm.expect(response.success).to.be.true;",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Password reset completed successfully');",
+                  "} else {",
+                  "    console.log('❌ Password reset failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{reset_token}}\",\n  \"email\": \"{{test_email}}\",\n  \"new_password\": \"ResetPassword123!\",\n  \"new_password_confirm\": \"ResetPassword123!\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/password/reset",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "password", "reset"]
+            },
+            "description": "**Complete password reset with token**\n\n### Purpose\nCompletes the password reset process using the token sent via email.\n\n### Request Body\n- `token`: Reset token received via email\n- `email`: User's email address (must match token)\n- `new_password`: New password (complexity requirements)\n- `new_password_confirm`: Must match new password\n\n### Password Reset Process\n1. Validates token format and existence\n2. Checks token expiration (15 minutes)\n3. Verifies email matches token\n4. Validates new password strength\n5. Hashes new password with bcrypt\n6. Updates password in database\n7. Invalidates reset token (single use)\n8. Revokes all existing refresh tokens\n9. Logs password reset event\n\n### Security Features\n- Single-use tokens with expiration\n- Email verification prevents token misuse\n- Password strength validation\n- Complete session invalidation\n- Audit logging for security\n\n### Success Response (200)\n- Confirmation message\n- Success status indicator\n\n### Error Responses\n- **400**: Invalid token, expired token, or validation errors\n- **404**: Token not found or already used\n- **429**: Rate limit exceeded"
+          }
+        }
+      ]
+    },
+    {
+      "name": "👤 User Profile",
+      "description": "**User Profile Management**\n\nEndpoints for retrieving and updating user profile information for authenticated users.",
+      "item": [
+        {
+          "name": "Get Current User Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for get user profile endpoint",
+                  "pm.test('Profile retrieved successfully', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('User profile structure is valid', function() {",
+                  "        pm.expect(response).to.have.property('id');",
+                  "        pm.expect(response).to.have.property('email');",
+                  "        pm.expect(response).to.have.property('first_name');",
+                  "        pm.expect(response).to.have.property('last_name');",
+                  "        pm.expect(response).to.have.property('full_name');",
+                  "        pm.expect(response).to.have.property('is_email_verified');",
+                  "        pm.expect(response).to.have.property('is_active');",
+                  "        pm.expect(response).to.have.property('created_at');",
+                  "        pm.expect(response).to.have.property('updated_at');",
+                  "    });",
+                  "    ",
+                  "    pm.test('No sensitive data exposed', function() {",
+                  "        pm.expect(response).to.not.have.property('password');",
+                  "        pm.expect(response).to.not.have.property('password_hash');",
+                  "    });",
+                  "    ",
+                  "    // Store user data for other tests",
+                  "    pm.environment.set('user_id', response.id);",
+                  "    pm.environment.set('user_email', response.email);",
+                  "    ",
+                  "    console.log('✅ User profile retrieved:', response.email);",
+                  "} else {",
+                  "    console.log('❌ Profile retrieval failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "me"]
+            },
+            "description": "**Get current user profile**\n\n### Purpose\nRetrieves the complete profile information for the currently authenticated user.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Profile Information\nReturns comprehensive user data including:\n- User identification (ID, email)\n- Personal information (names, full name)\n- Account status (email verified, active)\n- Timestamps (created, updated, last login)\n\n### Security Features\n- Token-based authentication\n- No sensitive data exposure (passwords)\n- User-specific data access only\n- Rate limiting protection\n\n### Success Response (200)\n- Complete user profile object\n- All non-sensitive user fields\n- Computed fields (full_name)\n\n### Error Responses\n- **401**: Invalid or expired access token\n- **404**: User not found (edge case)\n- **500**: Internal server error"
+          }
+        },
+        {
+          "name": "Update User Profile",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for update user profile endpoint",
+                  "pm.test('Profile updated successfully', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Updated profile returned', function() {",
+                  "        pm.expect(response).to.have.property('id');",
+                  "        pm.expect(response).to.have.property('email');",
+                  "        pm.expect(response).to.have.property('first_name');",
+                  "        pm.expect(response).to.have.property('last_name');",
+                  "        pm.expect(response).to.have.property('updated_at');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Updated timestamp is recent', function() {",
+                  "        const updatedAt = new Date(response.updated_at);",
+                  "        const now = new Date();",
+                  "        const diffMs = now - updatedAt;",
+                  "        pm.expect(diffMs).to.be.lessThan(60000); // Within last minute",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Profile updated successfully for:', response.email);",
+                  "} else {",
+                  "    console.log('❌ Profile update failed:', pm.response.text());",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{access_token}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"first_name\": \"Updated\",\n  \"last_name\": \"Name\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/auth/me",
+              "host": ["{{base_url}}"],
+              "path": ["api", "v1", "auth", "me"]
+            },
+            "description": "**Update current user profile**\n\n### Purpose\nAllows authenticated users to update their profile information.\n\n### Authentication\nRequires valid Bearer token in Authorization header.\n\n### Request Body (Optional Fields)\n- `first_name`: User's given name (1-100 characters)\n- `last_name`: User's family name (1-100 characters)\n- `email`: New email address (triggers verification)\n\n### Update Process\n1. Validates access token and extracts user ID\n2. Validates input data (length, format)\n3. Checks email uniqueness (if provided)\n4. Updates allowed fields in database\n5. Updates timestamp fields\n6. Logs profile change event\n7. Returns updated profile data\n\n### Security Features\n- Only profile owner can update\n- Input validation and sanitization\n- Email change requires re-verification\n- Audit logging for changes\n- Rate limiting protection\n\n### Success Response (200)\n- Updated user profile object\n- New updated_at timestamp\n\n### Error Responses\n- **400**: Validation errors (invalid input)\n- **401**: Invalid or expired access token\n- **409**: Email already exists (if changing email)\n- **429**: Rate limit exceeded"
+          }
+        }
+      ]
+    },
+    {
+      "name": "🏥 Health & Monitoring",
+      "description": "**Health Check and Monitoring Endpoints**\n\nProvides service health status, readiness checks, and metrics for monitoring and observability.",
+      "item": [
+        {
+          "name": "Basic Health Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for basic health check",
+                  "pm.test('Service is healthy', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Health response structure', function() {",
+                  "        pm.expect(response).to.have.property('status', 'healthy');",
+                  "        pm.expect(response).to.have.property('timestamp');",
+                  "        pm.expect(response).to.have.property('service');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Response time is acceptable', function() {",
+                  "        pm.expect(pm.response.responseTime).to.be.below(1000);",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Service is healthy');",
+                  "} else {",
+                  "    console.log('❌ Service health check failed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health",
+              "host": ["{{base_url}}"],
+              "path": ["health"]
+            },
+            "description": "**Basic service health check**\n\n### Purpose\nProvides a simple health status indicator for load balancers and monitoring systems.\n\n### No Authentication Required\nPublic endpoint for health monitoring.\n\n### Health Indicators\n- Service status (healthy/unhealthy)\n- Timestamp of check\n- Service identification\n- Basic system information\n\n### Use Cases\n- Load balancer health checks\n- Basic monitoring alerts\n- Service discovery health validation\n- Quick status verification\n\n### Success Response (200)\n- Status: \"healthy\"\n- Timestamp of check\n- Service name and version\n\n### Error Responses\n- **503**: Service unavailable/unhealthy"
+          }
+        },
+        {
+          "name": "Readiness Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for readiness check",
+                  "pm.test('Service is ready', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Readiness response structure', function() {",
+                  "        pm.expect(response).to.have.property('status', 'ready');",
+                  "        pm.expect(response).to.have.property('checks');",
+                  "        pm.expect(response.checks).to.be.an('object');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Database connection is healthy', function() {",
+                  "        pm.expect(response.checks).to.have.property('database');",
+                  "        pm.expect(response.checks.database).to.have.property('status', 'healthy');",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Service is ready with all dependencies');",
+                  "} else {",
+                  "    console.log('❌ Service readiness check failed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/ready",
+              "host": ["{{base_url}}"],
+              "path": ["health", "ready"]
+            },
+            "description": "**Service readiness check**\n\n### Purpose\nVerifies that the service is ready to handle requests by checking all dependencies.\n\n### No Authentication Required\nPublic endpoint for orchestration systems (Kubernetes, Docker Swarm).\n\n### Dependency Checks\n- Database connectivity\n- External service availability\n- Configuration validation\n- Required resources availability\n\n### Readiness Criteria\n1. Database connection pool is healthy\n2. Configuration is loaded and valid\n3. All required services are reachable\n4. Application is fully initialized\n\n### Use Cases\n- Kubernetes readiness probes\n- Container orchestration\n- Deployment validation\n- Traffic routing decisions\n\n### Success Response (200)\n- Status: \"ready\"\n- Individual dependency statuses\n- Check timestamps\n\n### Error Responses\n- **503**: Service not ready (dependency failures)"
+          }
+        },
+        {
+          "name": "Liveness Check",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for liveness check",
+                  "pm.test('Service is alive', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    ",
+                  "    pm.test('Liveness response structure', function() {",
+                  "        pm.expect(response).to.have.property('status', 'alive');",
+                  "        pm.expect(response).to.have.property('uptime');",
+                  "        pm.expect(response).to.have.property('timestamp');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Uptime is reasonable', function() {",
+                  "        pm.expect(response.uptime).to.be.a('number');",
+                  "        pm.expect(response.uptime).to.be.greaterThan(0);",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Service is alive, uptime:', response.uptime, 'seconds');",
+                  "} else {",
+                  "    console.log('❌ Service liveness check failed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/health/live",
+              "host": ["{{base_url}}"],
+              "path": ["health", "live"]
+            },
+            "description": "**Service liveness check**\n\n### Purpose\nVerifies that the service process is alive and responsive (not deadlocked or hung).\n\n### No Authentication Required\nPublic endpoint for container orchestration platforms.\n\n### Liveness Indicators\n- Process responsiveness\n- Service uptime\n- Basic application health\n- Thread and goroutine status\n\n### Liveness Criteria\n1. HTTP server is responding\n2. Application is not deadlocked\n3. Critical goroutines are running\n4. No memory leaks or resource exhaustion\n\n### Use Cases\n- Kubernetes liveness probes\n- Container restart decisions\n- Process monitoring\n- Deadlock detection\n\n### Success Response (200)\n- Status: \"alive\"\n- Service uptime in seconds\n- Response timestamp\n\n### Error Responses\n- **503**: Service is unresponsive or hung\n- **No Response**: Process is completely dead"
+          }
+        },
+        {
+          "name": "Metrics (Prometheus)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "// Test suite for metrics endpoint",
+                  "pm.test('Metrics endpoint accessible', function() {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Metrics format is Prometheus compatible', function() {",
+                  "    pm.expect(pm.response.headers.get('Content-Type')).to.include('text/plain');",
+                  "});",
+                  "",
+                  "if (pm.response.code === 200) {",
+                  "    const metricsText = pm.response.text();",
+                  "    ",
+                  "    pm.test('Contains standard Go metrics', function() {",
+                  "        pm.expect(metricsText).to.include('go_');",
+                  "        pm.expect(metricsText).to.include('process_');",
+                  "    });",
+                  "    ",
+                  "    pm.test('Contains HTTP metrics', function() {",
+                  "        pm.expect(metricsText).to.include('http_');",
+                  "    });",
+                  "    ",
+                  "    console.log('✅ Metrics endpoint is working');",
+                  "} else {",
+                  "    console.log('❌ Metrics endpoint failed');",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/metrics",
+              "host": ["{{base_url}}"],
+              "path": ["metrics"]
+            },
+            "description": "**Prometheus metrics endpoint**\n\n### Purpose\nExposes application and system metrics in Prometheus format for monitoring and alerting.\n\n### No Authentication Required\nPublic endpoint for metrics collection (should be secured in production).\n\n### Metric Categories\n- **Application Metrics**: Request counts, response times, error rates\n- **Business Metrics**: User registrations, logins, password resets\n- **System Metrics**: Memory usage, CPU utilization, goroutine counts\n- **Database Metrics**: Connection pool status, query performance\n\n### Standard Metrics\n- `http_requests_total`: Total HTTP requests by method and status\n- `http_request_duration_seconds`: Request latency histogram\n- `auth_logins_total`: Total login attempts by status\n- `auth_registrations_total`: Total user registrations\n- `go_goroutines`: Number of active goroutines\n- `process_cpu_seconds_total`: CPU time consumed\n\n### Use Cases\n- Prometheus monitoring setup\n- Grafana dashboard creation\n- Alerting rule configuration\n- Performance analysis\n- Capacity planning\n\n### Success Response (200)\n- Prometheus format metrics\n- Content-Type: text/plain\n- Current metric values\n\n### Security Considerations\n- May expose sensitive operational data\n- Should be restricted in production\n- Monitor access logs for this endpoint"
+          }
+        }
+      ]
+    }
+  ]
+}

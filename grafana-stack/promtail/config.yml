@@ -1,0 +1,86 @@
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+
+scrape_configs:
+  # Docker container logs with proper container name extraction
+  - job_name: docker
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: docker
+          __path__: /var/lib/docker/containers/*/*-json.log
+    
+    pipeline_stages:
+      # Parse JSON log format from Docker
+      - json:
+          expressions:
+            output: log
+            stream: stream
+            time: time
+      
+      # Extract container ID from filename
+      - regex:
+          expression: '^/var/lib/docker/containers/(?P<container_id>[^/]+)/'
+          source: filename
+      
+      # Use Docker API to get container name (requires docker.sock mount)
+      - docker: {}
+      
+      # Set timestamp
+      - timestamp:
+          format: RFC3339Nano
+          source: time
+      
+      # Add labels
+      - labels:
+          stream:
+          container_name:
+          container_id:
+      
+      # Output the actual log message
+      - output:
+          source: output
+
+
+  # System logs
+  - job_name: system
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: varlogs
+          __path__: /var/log/*log
+    pipeline_stages:
+      - timestamp:
+          format: Jan 02 15:04:05
+          source: timestamp
+      - labels:
+          filename:
+
+  # Application logs (if you have specific log files)
+  - job_name: application
+    static_configs:
+      - targets:
+          - localhost
+        labels:
+          job: application
+          __path__: /app/logs/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            message: msg
+            timestamp: time
+      - timestamp:
+          format: RFC3339
+          source: timestamp
+      - labels:
+          level:
