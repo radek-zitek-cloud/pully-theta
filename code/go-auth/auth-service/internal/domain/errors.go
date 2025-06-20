@@ -52,6 +52,18 @@ var (
 	// ErrInvalidUserID is returned when a user ID cannot be parsed as a valid UUID
 	// or is not in the expected format.
 	ErrInvalidUserID = errors.New("invalid user ID format")
+
+	// ErrUnauthorized is returned when a user is not authorized to access a resource
+	// or perform an operation due to insufficient permissions.
+	ErrUnauthorized = errors.New("unauthorized access")
+
+	// ErrForbidden is returned when a user is authenticated but lacks the required
+	// permissions to access a specific resource or perform an operation.
+	ErrForbidden = errors.New("access forbidden")
+
+	// ErrInsufficientPermissions is returned when a user has valid credentials
+	// but lacks the specific permissions required for the requested operation.
+	ErrInsufficientPermissions = errors.New("insufficient permissions")
 )
 
 // Input validation errors
@@ -59,6 +71,10 @@ var (
 	// ErrInvalidInput is returned when request input fails validation.
 	// This includes missing required fields, invalid formats, or constraint violations.
 	ErrInvalidInput = errors.New("invalid input")
+
+	// ErrValidationFailed is returned when input validation fails.
+	// This is a general validation error that encompasses various validation failures.
+	ErrValidationFailed = errors.New("validation failed")
 
 	// ErrInvalidEmail is returned when an email address doesn't conform
 	// to RFC 5322 standards or domain validation fails.
@@ -71,6 +87,10 @@ var (
 	// ErrPasswordMismatch is returned when password confirmation doesn't
 	// match the original password during registration or password change.
 	ErrPasswordMismatch = errors.New("password confirmation does not match")
+
+	// ErrEmailAlreadyExists is an alias for ErrEmailExists for backward compatibility.
+	// Use ErrEmailExists for new code.
+	ErrEmailAlreadyExists = ErrEmailExists
 )
 
 // Account state errors
@@ -196,6 +216,7 @@ func IsAuthenticationError(err error) bool {
 //	}
 func IsValidationError(err error) bool {
 	return err == ErrInvalidInput ||
+		err == ErrValidationFailed ||
 		err == ErrInvalidEmail ||
 		err == ErrWeakPassword ||
 		err == ErrPasswordMismatch ||
@@ -268,4 +289,52 @@ func IsSecurityError(err error) bool {
 		err == ErrIPBlocked ||
 		err == ErrCSRFTokenInvalid ||
 		err == ErrTooManyLoginAttempts
+}
+
+// IsNotFoundError checks if an error indicates that a resource was not found.
+// This is used to distinguish between "not found" and other database errors.
+//
+// Parameters:
+//   - err: The error to check
+//
+// Returns:
+//   - true if the error indicates a resource was not found
+//   - false for other types of errors
+//
+// Usage:
+//
+//	user, err := repo.GetByID(ctx, userID)
+//	if err != nil {
+//	    if IsNotFoundError(err) {
+//	        return domain.ErrUserNotFound
+//	    }
+//	    return fmt.Errorf("database error: %w", err)
+//	}
+func IsNotFoundError(err error) bool {
+	return err == ErrUserNotFound ||
+		err == ErrTokenNotFound ||
+		err == ErrResourceNotFound
+}
+
+// IsAuthorizationError checks if an error is related to authorization.
+// These errors typically result in HTTP 403 Forbidden responses.
+//
+// Parameters:
+//   - err: The error to check
+//
+// Returns:
+//   - true if the error is authorization-related
+//   - false for other types of errors
+//
+// Usage:
+//
+//	if IsAuthorizationError(err) {
+//	    // Handle authorization error
+//	    return http.StatusForbidden
+//	}
+func IsAuthorizationError(err error) bool {
+	return err == ErrUnauthorized ||
+		err == ErrForbidden ||
+		err == ErrInsufficientPermissions ||
+		err == ErrOperationNotAllowed
 }

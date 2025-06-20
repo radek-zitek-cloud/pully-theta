@@ -652,6 +652,169 @@ func (h *AuthHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
+// Me retrieves the current user's profile information.
+// This endpoint returns the authenticated user's profile data excluding sensitive information.
+//
+// @Summary      Get current user profile
+// @Description  Retrieve the authenticated user's profile information
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  domain.User "User profile data"
+// @Failure      401  {object}  domain.ErrorResponse "Unauthorized - invalid or missing token"
+// @Failure      404  {object}  domain.ErrorResponse "User not found"
+// @Failure      500  {object}  domain.ErrorResponse "Internal server error"
+// @Router       /auth/me [get]
+//
+// HTTP Method: GET
+// Path: /api/v1/auth/me
+// Headers: Authorization: Bearer <access_token>
+//
+// Success Response (200 OK):
+//
+//	{
+//	  "id": "123e4567-e89b-12d3-a456-426614174000",
+//	  "email": "user@example.com",
+//	  "first_name": "John",
+//	  "last_name": "Doe",
+//	  "created_at": "2023-01-15T10:30:00Z",
+//	  "updated_at": "2023-01-15T10:30:00Z",
+//	  "is_active": true
+//	}
+//
+// Security considerations:
+// - Requires valid JWT access token
+// - Password hash is excluded from response
+// - User ID is validated before lookup
+// - Access is logged for audit purposes
+func (h *AuthHandler) Me(c *gin.Context) {
+	// Generate request ID for tracking
+	requestID := h.getRequestID(c)
+	clientIP := c.ClientIP()
+	userAgent := c.GetHeader("User-Agent")
+
+	h.logger.WithFields(logrus.Fields{
+		"operation":  "get_profile",
+		"request_id": requestID,
+		"client_ip":  clientIP,
+		"user_agent": userAgent,
+	}).Info("Get user profile request received")
+
+	// Get user ID from JWT token in Authorization header (set by auth middleware)
+	userID, err := h.getUserIDFromContext(c)
+	if err != nil {
+		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
+		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid or missing authentication token", err, requestID)
+		return
+	}
+
+	// Get user profile from service
+	user, err := h.authService.GetUserByID(c.Request.Context(), userID.String())
+	if err != nil {
+		h.handleServiceError(c, err, "get_profile", requestID)
+		return
+	}
+
+	// Prepare success response (exclude sensitive fields)
+	response := map[string]interface{}{
+		"id":         user.ID,
+		"email":      user.Email,
+		"first_name": user.FirstName,
+		"last_name":  user.LastName,
+		"created_at": user.CreatedAt,
+		"updated_at": user.UpdatedAt,
+		"is_active":  user.IsActive,
+		"request_id": requestID,
+		"timestamp":  time.Now().UTC(),
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"user_id":    userID,
+		"request_id": requestID,
+	}).Info("User profile retrieved successfully")
+
+	c.JSON(http.StatusOK, response)
+}
+
+// LogoutAll logs out the user from all devices by revoking all refresh tokens.
+// This endpoint provides a way to terminate all active sessions for security purposes.
+//
+// @Summary      Logout from all devices
+// @Description  Revoke all refresh tokens for the authenticated user, logging them out from all devices
+// @Tags         authentication
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  map[string]interface{} "Logout successful"
+// @Failure      401  {object}  domain.ErrorResponse "Unauthorized - invalid or missing token"
+// @Failure      404  {object}  domain.ErrorResponse "User not found"
+// @Failure      500  {object}  domain.ErrorResponse "Internal server error"
+// @Router       /auth/logout-all [post]
+//
+// HTTP Method: POST
+// Path: /api/v1/auth/logout-all
+// Headers: Authorization: Bearer <access_token>
+//
+// Success Response (200 OK):
+//
+//	{
+//	  "success": true,
+//	  "message": "Successfully logged out from all devices",
+//	  "request_id": "req_123e4567-e89b-12d3-a456-426614174000",
+//	  "timestamp": "2023-01-15T10:30:00Z"
+//	}
+//
+// Security considerations:
+// - Requires valid JWT access token
+// - Revokes all refresh tokens for the user
+// - All existing sessions become invalid
+// - Operation is logged for audit purposes
+// - Cannot be undone - user must login again on all devices
+func (h *AuthHandler) LogoutAll(c *gin.Context) {
+	// Generate request ID for tracking
+	requestID := h.getRequestID(c)
+	clientIP := c.ClientIP()
+	userAgent := c.GetHeader("User-Agent")
+
+	h.logger.WithFields(logrus.Fields{
+		"operation":  "logout_all",
+		"request_id": requestID,
+		"client_ip":  clientIP,
+		"user_agent": userAgent,
+	}).Info("Logout-all request received")
+
+	// Get user ID from JWT token in Authorization header (set by auth middleware)
+	userID, err := h.getUserIDFromContext(c)
+	if err != nil {
+		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
+		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid or missing authentication token", err, requestID)
+		return
+	}
+
+	// Call service layer for logout-all (revoke all refresh tokens for user)
+	err = h.authService.LogoutAll(c.Request.Context(), userID, clientIP, userAgent)
+	if err != nil {
+		h.handleServiceError(c, err, "logout_all", requestID)
+		return
+	}
+
+	// Prepare success response
+	response := map[string]interface{}{
+		"success":    true,
+		"message":    "Successfully logged out from all devices",
+		"request_id": requestID,
+		"timestamp":  time.Now().UTC(),
+	}
+
+	h.logger.WithFields(logrus.Fields{
+		"user_id":    userID,
+		"request_id": requestID,
+	}).Info("User logged out from all devices successfully")
+
+	c.JSON(http.StatusOK, response)
+}
+
 // getRequestID extracts or generates a request correlation ID for tracing.
 func (h *AuthHandler) getRequestID(c *gin.Context) string {
 	// Try to get request ID from header first

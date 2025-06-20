@@ -79,37 +79,66 @@ type ServerConfig struct {
 // DatabaseConfig contains PostgreSQL database connection settings.
 // These settings are used to establish and manage database connections.
 //
+// Connection pooling parameters are critical for performance and resource management:
+// - MaxOpenConns: Limits total connections to prevent database overload
+// - MaxIdleConns: Maintains ready connections for better response times
+// - ConnMaxLifetime: Prevents stale connections and handles network issues
+// - ConnMaxIdleTime: Releases unused connections to conserve resources
+//
 // Security considerations:
 // - Use connection pooling to prevent connection exhaustion
-// - Enable SSL in production environments
+// - Enable SSL in production environments (set SSLMode to "require" or "verify-full")
 // - Use strong passwords and restrict network access
+// - Monitor connection metrics to detect potential attacks
 type DatabaseConfig struct {
 	// Host is the database server hostname or IP address
+	// Example: "localhost", "db.example.com", "192.168.1.100"
 	Host string `json:"host"`
 
 	// Port is the database server port (typically 5432 for PostgreSQL)
+	// Example: "5432", "5433"
 	Port string `json:"port"`
 
 	// User is the database username for authentication
+	// Should have minimum required privileges for the application
 	User string `json:"user"`
 
 	// Password is the database password (should be strong and unique)
-	Password string `json:"-"` // Excluded from JSON for security
+	// Excluded from JSON serialization for security
+	Password string `json:"-"`
 
 	// Name is the database name to connect to
+	// Example: "auth_service", "production_db"
 	Name string `json:"name"`
 
-	// SSLMode controls SSL/TLS connection security (disable, require, verify-full)
+	// SSLMode controls SSL/TLS connection security
+	// Values: "disable", "require", "verify-ca", "verify-full"
+	// Production should use "require" or higher
 	SSLMode string `json:"ssl_mode"`
 
 	// MaxOpenConns is the maximum number of open connections to the database
+	// Prevents overwhelming the database server
+	// Default: 25 (suitable for most applications)
+	// Consider increasing for high-traffic applications
 	MaxOpenConns int `json:"max_open_conns"`
 
 	// MaxIdleConns is the maximum number of connections in the idle connection pool
+	// Keeps connections ready for immediate use
+	// Default: 5 (should be <= MaxOpenConns)
+	// Higher values improve response time but use more resources
 	MaxIdleConns int `json:"max_idle_conns"`
 
 	// ConnMaxLifetime is the maximum amount of time a connection may be reused
+	// Prevents stale connections and handles network configuration changes
+	// Default: 1 hour (good balance between performance and freshness)
+	// Consider shorter times for unstable networks
 	ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
+
+	// ConnMaxIdleTime is the maximum amount of time a connection may be idle
+	// Releases unused connections to conserve database resources
+	// Default: 15 minutes (balances resource usage and connection overhead)
+	// Should be less than ConnMaxLifetime
+	ConnMaxIdleTime time.Duration `json:"conn_max_idle_time"`
 }
 
 // JWTConfig contains JWT token signing and validation settings.
@@ -285,8 +314,16 @@ type SwaggerConfig struct {
 //   - Error if required environment variables are missing
 //
 // Required environment variables:
-//   - DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME
+//   - DB_HOST, DB_USER, DB_PASSWORD, DB_NAME
 //   - JWT_SECRET (minimum 32 characters)
+//
+// Optional database connection pooling environment variables:
+//   - DB_PORT (default: 5432)
+//   - DB_SSL_MODE (default: disable)
+//   - DB_MAX_OPEN_CONNS (default: 25) - Maximum concurrent connections
+//   - DB_MAX_IDLE_CONNS (default: 5) - Maximum idle connections in pool
+//   - DB_CONN_MAX_LIFETIME (default: 1h) - Maximum connection reuse time
+//   - DB_CONN_MAX_IDLE_TIME (default: 15m) - Maximum connection idle time
 //
 // Example usage:
 //
@@ -317,7 +354,8 @@ func Load() (*Config, error) {
 			SSLMode:         getEnvOrDefault("DB_SSL_MODE", "disable"),
 			MaxOpenConns:    getIntOrDefault("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getIntOrDefault("DB_MAX_IDLE_CONNS", 5),
-			ConnMaxLifetime: getDurationOrDefault("DB_CONN_MAX_LIFETIME", 300*time.Second),
+			ConnMaxLifetime: getDurationOrDefault("DB_CONN_MAX_LIFETIME", 1*time.Hour),     // Increased default to 1 hour
+			ConnMaxIdleTime: getDurationOrDefault("DB_CONN_MAX_IDLE_TIME", 15*time.Minute), // Added idle time setting
 		},
 		JWT: JWTConfig{
 			Secret:             getEnvOrFail("JWT_SECRET"),

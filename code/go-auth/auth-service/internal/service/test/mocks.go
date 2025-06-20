@@ -240,6 +240,8 @@ func (m *MockRateLimitService) RecordLoginAttempt(ctx context.Context, identifie
 }
 
 // MockAuthMetricsRecorder provides a mock implementation of service.AuthMetricsRecorder.
+// This mock implements all methods of the AuthMetricsRecorder interface for testing
+// authentication and authorization metrics recording operations.
 type MockAuthMetricsRecorder struct {
 	mock.Mock
 }
@@ -257,4 +259,49 @@ func (m *MockAuthMetricsRecorder) RecordTokenOperation(operation, tokenType, res
 // SetActiveUsers mocks setting the active users gauge metric.
 func (m *MockAuthMetricsRecorder) SetActiveUsers(count float64) {
 	m.Called(count)
+}
+
+// RecordRegistrationAttempt mocks recording registration attempt metrics.
+func (m *MockAuthMetricsRecorder) RecordRegistrationAttempt() {
+	m.Called()
+}
+
+// RecordRegistrationSuccess mocks recording successful registration metrics.
+func (m *MockAuthMetricsRecorder) RecordRegistrationSuccess() {
+	m.Called()
+}
+
+// RecordRegistrationFailure mocks recording failed registration metrics.
+func (m *MockAuthMetricsRecorder) RecordRegistrationFailure(reason string) {
+	m.Called(reason)
+}
+
+// RecordLoginAttempt mocks recording login attempt metrics.
+func (m *MockAuthMetricsRecorder) RecordLoginAttempt() {
+	m.Called()
+}
+
+// RecordLoginSuccess mocks recording successful login metrics.
+func (m *MockAuthMetricsRecorder) RecordLoginSuccess() {
+	m.Called()
+}
+
+// RecordLoginFailure mocks recording failed login metrics.
+func (m *MockAuthMetricsRecorder) RecordLoginFailure(reason string) {
+	m.Called(reason)
+}
+
+// RecordLogoutAttempt mocks recording logout attempt metrics.
+func (m *MockAuthMetricsRecorder) RecordLogoutAttempt() {
+	m.Called()
+}
+
+// RecordLogoutSuccess mocks recording successful logout metrics.
+func (m *MockAuthMetricsRecorder) RecordLogoutSuccess() {
+	m.Called()
+}
+
+// RecordLogoutFailure mocks recording failed logout metrics.
+func (m *MockAuthMetricsRecorder) RecordLogoutFailure(reason string) {
+	m.Called(reason)
 }

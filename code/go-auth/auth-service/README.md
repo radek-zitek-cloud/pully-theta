@@ -438,9 +438,12 @@ DB_NAME=auth_service
 DB_USER=postgres
 DB_PASSWORD=postgres
 DB_SSL_MODE=disable
-DB_MAX_CONNECTIONS=25
-DB_MAX_IDLE_CONNECTIONS=5
-DB_CONNECTION_MAX_LIFETIME=5m
+
+# Database Connection Pool Configuration
+DB_MAX_OPEN_CONNS=25           # Maximum concurrent database connections
+DB_MAX_IDLE_CONNS=5            # Maximum idle connections in pool
+DB_CONN_MAX_LIFETIME=1h        # Maximum time a connection can be reused
+DB_CONN_MAX_IDLE_TIME=15m      # Maximum time a connection can be idle
 
 # JWT Configuration
 JWT_SECRET=your-super-secret-jwt-key-at-least-32-characters

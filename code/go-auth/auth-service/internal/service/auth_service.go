@@ -128,6 +128,21 @@ type AuthMetricsRecorder interface {
 	// Parameters:
 	//   - count: Current number of active users
 	SetActiveUsers(count float64)
+
+	// Registration metrics
+	RecordRegistrationAttempt()
+	RecordRegistrationSuccess()
+	RecordRegistrationFailure(reason string)
+
+	// Login metrics
+	RecordLoginAttempt()
+	RecordLoginSuccess()
+	RecordLoginFailure(reason string)
+
+	// Logout metrics
+	RecordLogoutAttempt()
+	RecordLogoutSuccess()
+	RecordLogoutFailure(reason string)
 }
 
 // NewAuthService creates a new AuthService instance with all dependencies.
@@ -543,6 +558,90 @@ func (s *AuthService) Logout(ctx context.Context, refreshToken, clientIP, userAg
 		"operation": "logout",
 		"user_id":   tokenEntity.UserID,
 	}).Info("User logged out successfully")
+
+	return nil
+}
+
+// LogoutAll revokes all refresh tokens for a user, effectively logging them out from all devices.
+// This method provides a way to terminate all active sessions for a user account,
+// useful for security purposes or when a user wants to logout from all devices.
+//
+// Security features:
+// - Revokes all refresh tokens for the specified user
+// - Comprehensive audit logging for security monitoring
+// - Input validation and sanitization
+// - Proper error handling and logging
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - userID: The user ID whose tokens should be revoked
+//   - clientIP: Client IP address for security logging
+//   - userAgent: Client user agent for security logging
+//
+// Returns:
+//   - Error if logout-all operation fails
+//
+// Possible errors:
+//   - domain.ErrInvalidUserID: User ID is invalid or malformed
+//   - domain.ErrUserNotFound: User doesn't exist
+//   - domain.ErrInfrastructureError: Database operation failed
+//
+// Time Complexity: O(n) where n is the number of active tokens for the user
+// Space Complexity: O(1)
+//
+// Example usage:
+//
+//	err := authService.LogoutAll(ctx, userID, "192.168.1.1", "Mozilla/5.0...")
+//	if err != nil {
+//	    log.Printf("Logout-all failed: %v", err)
+//	}
+func (s *AuthService) LogoutAll(ctx context.Context, userID uuid.UUID, clientIP, userAgent string) error {
+	s.logger.WithFields(logrus.Fields{
+		"operation":  "logout_all",
+		"user_id":    userID,
+		"client_ip":  clientIP,
+		"user_agent": userAgent,
+	}).Info("User logout-all attempt")
+
+	// Record metrics for monitoring
+	s.metricsRecorder.RecordAuthOperation("logout_all", "attempt")
+
+	// Validate user ID
+	if userID == uuid.Nil {
+		s.auditLogFailure(ctx, nil, "logout_all", "Invalid user ID", clientIP, userAgent, domain.ErrInvalidUserID)
+		s.metricsRecorder.RecordAuthOperation("logout_all", "failure")
+		return domain.ErrInvalidUserID
+	}
+
+	// Verify user exists
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		if domain.IsNotFoundError(err) {
+			s.auditLogFailure(ctx, &userID, "logout_all", "User not found", clientIP, userAgent, domain.ErrUserNotFound)
+			s.metricsRecorder.RecordAuthOperation("logout_all", "failure")
+			return domain.ErrUserNotFound
+		}
+		s.logger.WithError(err).Error("Failed to get user by ID")
+		s.metricsRecorder.RecordAuthOperation("logout_all", "error")
+		return fmt.Errorf("failed to get user: %w", err)
+	}
+
+	// Revoke all refresh tokens for the user
+	if err := s.refreshTokenRepo.RevokeAllUserTokens(ctx, userID); err != nil {
+		s.logger.WithError(err).Error("Failed to revoke all user tokens")
+		s.auditLogFailure(ctx, &userID, "logout_all", "Token revocation failed", clientIP, userAgent, err)
+		s.metricsRecorder.RecordAuthOperation("logout_all", "error")
+		return fmt.Errorf("failed to revoke all tokens: %w", err)
+	}
+
+	// Record successful audit log
+	s.auditLogSuccess(ctx, &userID, "logout_all", "User logged out from all devices", clientIP, userAgent)
+	s.metricsRecorder.RecordAuthOperation("logout_all", "success")
+
+	s.logger.WithFields(logrus.Fields{
+		"user_id": userID,
+		"email":   user.Email,
+	}).Info("User logged out from all devices successfully")
 
 	return nil
 }

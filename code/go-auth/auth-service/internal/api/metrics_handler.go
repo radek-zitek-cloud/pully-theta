@@ -303,4 +303,58 @@ type AuthMetricsRecorder interface {
 
 	// SetActiveUsers updates the active users gauge.
 	SetActiveUsers(count float64)
+
+	// Registration metrics
+	RecordRegistrationAttempt()
+	RecordRegistrationSuccess()
+	RecordRegistrationFailure(reason string)
+
+	// Login metrics
+	RecordLoginAttempt()
+	RecordLoginSuccess()
+	RecordLoginFailure(reason string)
+
+	// Logout metrics
+	RecordLogoutAttempt()
+	RecordLogoutSuccess()
+	RecordLogoutFailure(reason string)
+}
+
+// Registration metrics implementation
+func (m *MetricsHandler) RecordRegistrationAttempt() {
+	m.RecordAuthOperation("register", "attempt")
+}
+
+func (m *MetricsHandler) RecordRegistrationSuccess() {
+	m.RecordAuthOperation("register", "success")
+}
+
+func (m *MetricsHandler) RecordRegistrationFailure(reason string) {
+	m.RecordAuthOperation("register", "failure")
+}
+
+// Login metrics implementation
+func (m *MetricsHandler) RecordLoginAttempt() {
+	m.RecordAuthOperation("login", "attempt")
+}
+
+func (m *MetricsHandler) RecordLoginSuccess() {
+	m.RecordAuthOperation("login", "success")
+}
+
+func (m *MetricsHandler) RecordLoginFailure(reason string) {
+	m.RecordAuthOperation("login", "failure")
+}
+
+// Logout metrics implementation
+func (m *MetricsHandler) RecordLogoutAttempt() {
+	m.RecordAuthOperation("logout", "attempt")
+}
+
+func (m *MetricsHandler) RecordLogoutSuccess() {
+	m.RecordAuthOperation("logout", "success")
+}
+
+func (m *MetricsHandler) RecordLogoutFailure(reason string) {
+	m.RecordAuthOperation("logout", "failure")
 }

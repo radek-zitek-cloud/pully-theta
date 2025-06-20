@@ -20,6 +20,7 @@ import (
 	"auth-service/internal/api"
 	"auth-service/internal/config"
 	"auth-service/internal/middleware"
+	"auth-service/internal/password"
 	"auth-service/internal/repository"
 	"auth-service/internal/service"
 )
@@ -213,6 +214,48 @@ func main() {
 		logger.WithError(err).Fatal("Failed to initialize auth handler")
 	}
 
+	// Initialize password service configuration
+	passwordConfig := password.ServiceConfig{
+		ValidationConfig: password.ValidationConfig{
+			MinLength:           12,                           // Minimum 12 characters for strong passwords
+			MaxLength:           128,                          // Maximum 128 characters
+			RequireUppercase:    true,                         // Require uppercase letters
+			RequireLowercase:    true,                         // Require lowercase letters
+			RequireDigits:       true,                         // Require digits
+			RequireSpecialChars: true,                         // Require special characters
+			SpecialCharSet:      "!@#$%^&*()_+-=[]{}|;:,.<>?", // Allowed special chars
+		},
+		ResetConfig: password.ResetConfig{
+			TokenTTL:             24 * time.Hour, // 24 hours for password reset tokens
+			MaxAttemptsPerIP:     5,              // Maximum 5 attempts per IP
+			MaxAttemptsPerEmail:  3,              // Maximum 3 attempts per email
+			TokenLength:          32,             // 32 bytes = 256 bits for secure tokens
+			RequireEmailVerified: true,           // Require verified email for reset
+		},
+		BcryptCost:      12,   // Bcrypt cost factor (2^12 iterations)
+		RevokeAllTokens: true, // Revoke all refresh tokens on password change
+	}
+
+	// Initialize password service
+	passwordService, err := password.NewService(
+		userRepo,
+		refreshTokenRepo,
+		passwordResetRepo,
+		emailService,
+		logger,
+		cfg,
+		passwordConfig,
+	)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize password service")
+	}
+
+	// Initialize password handler
+	passwordHandler, err := password.NewHandler(passwordService, logger, cfg)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize password handler")
+	}
+
 	// Create version information for health handler
 	versionInfo := &api.VersionInfo{
 		Version:         Version,
@@ -229,7 +272,7 @@ func main() {
 	healthHandler := api.NewHealthHandler(db, logger, versionInfo)
 
 	// Set up HTTP router with middleware
-	router := setupRouter(cfg, authHandler, healthHandler, metricsHandler, logger)
+	router := setupRouter(cfg, authHandler, passwordHandler, healthHandler, metricsHandler, logger)
 
 	// Create HTTP server with timeouts
 	server := &http.Server{
@@ -359,10 +402,20 @@ func initializeDatabase(cfg *config.Config, logger *logrus.Logger) (*sql.DB, err
 		return nil, fmt.Errorf("failed to open database connection: %w", err)
 	}
 
-	// Configure connection pool
-	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)
-	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)
-	db.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime)
+	// Configure connection pool for optimal performance and resource management
+	// These settings help prevent database connection exhaustion and ensure
+	// connections are properly managed throughout the application lifecycle
+	db.SetMaxOpenConns(cfg.Database.MaxOpenConns)       // Limit total concurrent connections
+	db.SetMaxIdleConns(cfg.Database.MaxIdleConns)       // Maintain ready connections for performance
+	db.SetConnMaxLifetime(cfg.Database.ConnMaxLifetime) // Prevent stale connections
+	db.SetConnMaxIdleTime(cfg.Database.ConnMaxIdleTime) // Release unused connections
+
+	logger.WithFields(logrus.Fields{
+		"max_open_conns":     cfg.Database.MaxOpenConns,
+		"max_idle_conns":     cfg.Database.MaxIdleConns,
+		"conn_max_lifetime":  cfg.Database.ConnMaxLifetime,
+		"conn_max_idle_time": cfg.Database.ConnMaxIdleTime,
+	}).Debug("Database connection pool configured")
 
 	// Test database connectivity
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -395,13 +448,14 @@ func initializeDatabase(cfg *config.Config, logger *logrus.Logger) (*sql.DB, err
 // Parameters:
 //   - cfg: Application configuration
 //   - authHandler: Handler for authentication endpoints
+//   - passwordHandler: Handler for password management endpoints
 //   - healthHandler: Handler for health check endpoints
 //   - metricsHandler: Handler for Prometheus metrics endpoint
 //   - logger: Logger for middleware and request logging
 //
 // Returns:
 //   - Configured Gin router with all routes and middleware
-func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, healthHandler *api.HealthHandler, metricsHandler *api.MetricsHandler, logger *logrus.Logger) *gin.Engine {
+func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, passwordHandler *password.Handler, healthHandler *api.HealthHandler, metricsHandler *api.MetricsHandler, logger *logrus.Logger) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -450,8 +504,8 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, healthHandler
 			}
 
 			// Public routes that allow both authenticated and unauthenticated users
-			auth.POST("/password/forgot", authHandler.ResetPassword)
-			auth.POST("/password/reset", authHandler.ConfirmResetPassword)
+			auth.POST("/password/forgot", passwordHandler.RequestPasswordReset)
+			auth.POST("/password/reset", passwordHandler.CompletePasswordReset)
 
 			// Refresh token endpoint - special case, validates refresh tokens
 			auth.POST("/refresh", authHandler.RefreshToken)
@@ -464,7 +518,7 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, healthHandler
 				protected.PUT("/me", authHandler.UpdateProfile)
 				protected.POST("/logout", authHandler.Logout)
 				protected.POST("/logout-all", authHandler.LogoutAll)
-				protected.PUT("/password/change", authHandler.ChangePassword)
+				protected.PUT("/password/change", passwordHandler.ChangePassword)
 			}
 		}
 	}
