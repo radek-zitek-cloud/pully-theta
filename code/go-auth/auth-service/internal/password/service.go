@@ -409,14 +409,67 @@ func (s *Service) ValidatePasswordWithContext(password, userEmail, userName stri
 	return s.validator.ValidateWithContext(password, userEmail, userName)
 }
 
+// GetPasswordRequirements returns the current password policy requirements.
+// This method provides a structured representation of the password validation
+// rules that can be used by clients to build dynamic user interfaces.
+//
+// Returns:
+//   - PasswordRequirements: Structured password policy information
+//
+// The returned structure includes:
+// - Minimum and maximum length requirements
+// - Character class requirements (uppercase, lowercase, digits, special)
+// - List of human-readable requirement descriptions
+// - Valid special character set
+//
+// Time Complexity: O(1)
+// Space Complexity: O(1)
+//
+// Example usage:
+//
+//	requirements := passwordService.GetPasswordRequirements()
+//	for _, req := range requirements.Requirements {
+//	    fmt.Printf("- %s\n", req)
+//	}
+//
+// Example response structure:
+//
+//	{
+//	  "min_length": 8,
+//	  "max_length": 128,
+//	  "require_uppercase": true,
+//	  "require_lowercase": true,
+//	  "require_digits": true,
+//	  "require_special_chars": true,
+//	  "special_char_set": "!@#$%^&*()_+-=[]{}|;:,.<>?",
+//	  "requirements": [
+//	    "At least 8 characters long",
+//	    "At least one uppercase letter",
+//	    "At least one lowercase letter",
+//	    "At least one digit",
+//	    "At least one special character"
+//	  ]
+//	}
+func (s *Service) GetPasswordRequirements() PasswordRequirements {
+	return s.validator.GetRequirements()
+}
+
 // GetPasswordStrengthScore calculates a password strength score from 0-100.
-// This provides quantitative feedback on password quality.
+// This method provides quantitative feedback about password quality that
+// can be used in user interfaces for real-time password strength indicators.
 //
 // Parameters:
 //   - password: Password string to analyze
 //
 // Returns:
 //   - Strength score from 0 (very weak) to 100 (very strong)
+//
+// Scoring factors:
+// - Length (longer passwords score higher)
+// - Character diversity (multiple character classes score higher)
+// - Entropy calculation based on character set size
+// - Pattern detection (repeated characters, sequences reduce score)
+// - Common password detection (known weak passwords score very low)
 //
 // Time Complexity: O(n) where n is password length
 // Space Complexity: O(1)
@@ -425,8 +478,15 @@ func (s *Service) ValidatePasswordWithContext(password, userEmail, userName stri
 //
 //	score := passwordService.GetPasswordStrengthScore("MySecurePass123!")
 //	if score < 60 {
-//	    log.Warn("Password strength below recommended threshold")
+//	    log.Warn("Password strength is below recommended threshold")
 //	}
+//
+// Score interpretation:
+// - 0-30: Very weak (unacceptable)
+// - 31-50: Weak (discouraged)
+// - 51-70: Fair (acceptable)
+// - 71-85: Good (recommended)
+// - 86-100: Excellent (ideal)
 func (s *Service) GetPasswordStrengthScore(password string) int {
 	return s.validator.GetStrengthScore(password)
 }
@@ -586,4 +646,17 @@ func (s *Service) auditLog(ctx context.Context, userID *uuid.UUID, eventType, de
 
 	// TODO: Store audit log in database
 	// For now, just log to structured logger
+}
+
+// PasswordRequirements represents the password policy configuration
+// that can be exposed to clients for dynamic UI generation.
+type PasswordRequirements struct {
+	MinLength           int      `json:"min_length"`
+	MaxLength           int      `json:"max_length"`
+	RequireUppercase    bool     `json:"require_uppercase"`
+	RequireLowercase    bool     `json:"require_lowercase"`
+	RequireDigits       bool     `json:"require_digits"`
+	RequireSpecialChars bool     `json:"require_special_chars"`
+	SpecialCharSet      string   `json:"special_char_set"`
+	Requirements        []string `json:"requirements"`
 }

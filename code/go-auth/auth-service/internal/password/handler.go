@@ -1,6 +1,7 @@
 package password
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -22,6 +23,7 @@ import (
 // - POST /api/v1/password/reset/request - Request password reset (public)
 // - POST /api/v1/password/reset/complete - Complete password reset (public)
 // - POST /api/v1/password/validate - Validate password strength (public)
+// - GET /api/v1/password/requirements - Get password requirements (public)
 //
 // Security features:
 // - JWT authentication for password changes
@@ -98,6 +100,7 @@ func NewHandler(service *Service, logger *logrus.Logger, config *config.Config) 
 //   - POST /password/reset/request (public)
 //   - POST /password/reset/complete (public)
 //   - POST /password/validate (public)
+//   - GET /password/requirements (public)
 //
 // Example usage:
 //
@@ -105,14 +108,15 @@ func NewHandler(service *Service, logger *logrus.Logger, config *config.Config) 
 //	passwordHandler.RegisterRoutes(v1)
 func (h *Handler) RegisterRoutes(router *gin.RouterGroup) {
 	// Password change endpoint (requires authentication)
-	router.POST("/password/change", h.ChangePassword)
+	router.PUT("/password/change", h.ChangePassword)
 
 	// Password reset endpoints (public)
-	router.POST("/password/reset/request", h.RequestPasswordReset)
-	router.POST("/password/reset/complete", h.CompletePasswordReset)
+	router.POST("/password/forgot", h.RequestPasswordReset)
+	router.POST("/password/reset", h.CompletePasswordReset)
 
-	// Password validation endpoint (public)
+	// Password validation endpoints (public)
 	router.POST("/password/validate", h.ValidatePassword)
+	router.GET("/password/requirements", h.GetPasswordRequirements)
 }
 
 // ChangePasswordRequest represents the request payload for password changes.
@@ -601,6 +605,75 @@ func (h *Handler) ValidatePassword(c *gin.Context) {
 	})
 }
 
+// GetPasswordRequirements returns the current password requirements.
+// This endpoint provides clients with the dynamic password policy to
+// build user-friendly password creation interfaces.
+//
+// HTTP Method: GET
+// Path: /password/requirements
+// Authentication: Not required (public endpoint)
+// Content-Type: application/json
+//
+// Response (200 OK):
+//
+//	{
+//	    "success": true,
+//	    "message": "Password requirements retrieved",
+//	    "data": {
+//	        "min_length": 8,
+//	        "max_length": 128,
+//	        "require_uppercase": true,
+//	        "require_lowercase": true,
+//	        "require_digits": true,
+//	        "require_special_chars": true,
+//	        "special_char_set": "!@#$%^&*()_+-=[]{}|;:,.<>?",
+//	        "requirements": [
+//	            "At least 8 characters long",
+//	            "At least one uppercase letter",
+//	            "At least one lowercase letter",
+//	            "At least one digit",
+//	            "At least one special character"
+//	        ]
+//	    }
+//	}
+//
+// Use cases:
+// - Frontend password strength indicators
+// - Dynamic validation messages
+// - User onboarding and help systems
+// - Third-party integration requirements
+//
+// Security considerations:
+// - Public endpoint, no authentication required
+// - No sensitive information disclosed
+// - Helps users create stronger passwords
+// - Can be cached by clients for performance
+//
+// Example usage:
+//
+//	fetch('/api/v1/auth/password/requirements')
+//	  .then(response => response.json())
+//	  .then(data => {
+//	    // Build password requirements UI
+//	    displayPasswordRequirements(data.data.requirements);
+//	  });
+func (h *Handler) GetPasswordRequirements(c *gin.Context) {
+	h.logger.WithFields(logrus.Fields{
+		"endpoint": "/password/requirements",
+		"method":   c.Request.Method,
+	}).Info("Password requirements request received")
+
+	// Get password requirements from service
+	requirements := h.service.GetPasswordRequirements()
+
+	// Return requirements response
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "Password requirements retrieved",
+		"data":    requirements,
+	})
+}
+
 // Helper methods for request validation
 
 // validateChangePasswordRequest validates the password change request structure.
@@ -677,9 +750,43 @@ func (h *Handler) validatePasswordValidationRequest(req *ValidatePasswordRequest
 // Helper methods for response handling
 
 // handlePasswordError converts service errors to appropriate HTTP responses.
+// This method uses errors.Is() to properly handle wrapped errors from the
+// password validation system, ensuring detailed error messages reach the client.
+//
+// Parameters:
+//   - c: Gin context for HTTP response
+//   - err: Error from password service operations
+//   - operation: Description of the operation for logging
+//
+// HTTP Response Mapping:
+//   - ErrUserNotFound: 404 Not Found
+//   - ErrInvalidCredentials: 401 Unauthorized
+//   - ErrWeakPassword: 400 Bad Request (with detailed validation errors)
+//   - ErrAccountInactive: 403 Forbidden
+//   - ErrTokenExpired: 400 Bad Request
+//   - ErrInvalidToken/ErrTokenNotFound: 400 Bad Request
+//   - Other errors: 500 Internal Server Error
+//
+// Security considerations:
+// - Password validation errors include detailed requirements to help users
+// - Authentication errors are generic to prevent information disclosure
+// - All errors are logged for security monitoring
+//
+// Example password validation error response:
+//
+//	{
+//	  "success": false,
+//	  "message": "Password does not meet requirements",
+//	  "error": {
+//	    "code": "WEAK_PASSWORD",
+//	    "message": "Password does not meet requirements",
+//	    "details": "password must contain at least one uppercase letter"
+//	  }
+//	}
 func (h *Handler) handlePasswordError(c *gin.Context, err error, operation string) {
-	switch err {
-	case domain.ErrUserNotFound:
+	// Use errors.Is() to properly handle wrapped errors from password validation
+	switch {
+	case errors.Is(err, domain.ErrUserNotFound):
 		c.JSON(http.StatusNotFound, gin.H{
 			"success": false,
 			"message": "User not found",
@@ -688,7 +795,7 @@ func (h *Handler) handlePasswordError(c *gin.Context, err error, operation strin
 				"message": "User not found",
 			},
 		})
-	case domain.ErrInvalidCredentials:
+	case errors.Is(err, domain.ErrInvalidCredentials):
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "Invalid credentials",
@@ -697,17 +804,26 @@ func (h *Handler) handlePasswordError(c *gin.Context, err error, operation strin
 				"message": "Invalid credentials",
 			},
 		})
-	case domain.ErrWeakPassword:
+	case errors.Is(err, domain.ErrWeakPassword):
+		// Extract the detailed error message for password validation feedback
+		var errorDetails string
+		if err.Error() != domain.ErrWeakPassword.Error() {
+			// Remove the base error prefix to get the specific validation message
+			errorDetails = strings.TrimPrefix(err.Error(), domain.ErrWeakPassword.Error()+": ")
+		} else {
+			errorDetails = "Password does not meet security requirements"
+		}
+
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Password does not meet requirements",
 			"error": gin.H{
 				"code":    "WEAK_PASSWORD",
 				"message": "Password does not meet requirements",
-				"details": err.Error(),
+				"details": errorDetails,
 			},
 		})
-	case domain.ErrAccountInactive:
+	case errors.Is(err, domain.ErrAccountInactive):
 		c.JSON(http.StatusForbidden, gin.H{
 			"success": false,
 			"message": "Account is inactive",
@@ -716,7 +832,7 @@ func (h *Handler) handlePasswordError(c *gin.Context, err error, operation strin
 				"message": "Account is inactive",
 			},
 		})
-	case domain.ErrTokenExpired:
+	case errors.Is(err, domain.ErrTokenExpired):
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Reset token has expired",
@@ -725,7 +841,7 @@ func (h *Handler) handlePasswordError(c *gin.Context, err error, operation strin
 				"message": "Reset token has expired",
 			},
 		})
-	case domain.ErrInvalidToken, domain.ErrTokenNotFound:
+	case errors.Is(err, domain.ErrInvalidToken), errors.Is(err, domain.ErrTokenNotFound):
 		c.JSON(http.StatusBadRequest, gin.H{
 			"success": false,
 			"message": "Reset token is invalid",

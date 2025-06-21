@@ -628,3 +628,82 @@ func loadCommonPasswords() map[string]bool {
 
 	return commonPasswords
 }
+
+// GetRequirements returns a structured representation of the password requirements.
+// This method provides both the technical configuration and human-readable
+// descriptions of the password policy for client consumption.
+//
+// Returns:
+//   - PasswordRequirements: Complete password policy information
+//
+// The returned structure includes all validation rules and their descriptions,
+// making it suitable for building dynamic user interfaces that show password
+// requirements in real-time.
+//
+// Time Complexity: O(1)
+// Space Complexity: O(k) where k is the number of requirements
+//
+// Example usage:
+//
+//	requirements := validator.GetRequirements()
+//	fmt.Printf("Password must be %d-%d characters\n",
+//	    requirements.MinLength, requirements.MaxLength)
+//	for _, req := range requirements.Requirements {
+//	    fmt.Printf("- %s\n", req)
+//	}
+func (v *Validator) GetRequirements() PasswordRequirements {
+	requirements := []string{}
+
+	// Add length requirement
+	if v.minLength > 0 && v.maxLength > v.minLength {
+		requirements = append(requirements,
+			fmt.Sprintf("Between %d and %d characters long", v.minLength, v.maxLength))
+	} else if v.minLength > 0 {
+		requirements = append(requirements,
+			fmt.Sprintf("At least %d characters long", v.minLength))
+	}
+
+	// Add character class requirements
+	if v.requireUppercase {
+		requirements = append(requirements, "At least one uppercase letter (A-Z)")
+	}
+	if v.requireLowercase {
+		requirements = append(requirements, "At least one lowercase letter (a-z)")
+	}
+	if v.requireDigits {
+		requirements = append(requirements, "At least one digit (0-9)")
+	}
+	if v.requireSpecialChars {
+		requirements = append(requirements, "At least one special character")
+	}
+
+	// Add security requirements
+	requirements = append(requirements, "Cannot be a commonly used password")
+	requirements = append(requirements, "Cannot contain parts of your email or name")
+
+	return PasswordRequirements{
+		MinLength:           v.minLength,
+		MaxLength:           v.maxLength,
+		RequireUppercase:    v.requireUppercase,
+		RequireLowercase:    v.requireLowercase,
+		RequireDigits:       v.requireDigits,
+		RequireSpecialChars: v.requireSpecialChars,
+		SpecialCharSet:      v.getSpecialCharSet(),
+		Requirements:        requirements,
+	}
+}
+
+// getSpecialCharSet returns the special character set as a string.
+// This method extracts the special characters from the compiled regex
+// for client consumption.
+//
+// Returns:
+//   - String containing all valid special characters
+//
+// Time Complexity: O(1)
+// Space Complexity: O(1)
+func (v *Validator) getSpecialCharSet() string {
+	// For now, return the default set - in the future this could be
+	// extracted from the compiled regex if needed
+	return "!@#$%^&*()_+-=[]{}|;:,.<>?"
+}
