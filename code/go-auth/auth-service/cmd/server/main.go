@@ -23,6 +23,7 @@ import (
 	"auth-service/internal/middleware"
 	"auth-service/internal/password"
 	"auth-service/internal/repository"
+	"auth-service/internal/security"
 	"auth-service/internal/service"
 )
 
@@ -195,6 +196,12 @@ func main() {
 		logger.WithError(err).Fatal("Failed to initialize metrics handler")
 	}
 
+	// Initialize enhanced JWT security service with Redis blacklisting
+	jwtService, err := initializeJWTService(cfg, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize JWT security service")
+	}
+
 	// Initialize authentication service
 	authService, err := service.NewAuthService(
 		userRepo,
@@ -206,6 +213,7 @@ func main() {
 		emailService,
 		rateLimitService,
 		metricsHandler.GetAuthMetricsRecorder(),
+		jwtService,
 	)
 	if err != nil {
 		logger.WithError(err).Fatal("Failed to initialize auth service")
@@ -275,7 +283,7 @@ func main() {
 	healthHandler := api.NewHealthHandler(db, logger, versionInfo)
 
 	// Set up HTTP router with middleware
-	router := setupRouter(cfg, authHandler, passwordHandler, healthHandler, metricsHandler, logger)
+	router := setupRouter(cfg, authHandler, passwordHandler, healthHandler, metricsHandler, jwtService, logger)
 
 	// Create HTTP server with timeouts
 	server := &http.Server{
@@ -458,7 +466,7 @@ func initializeDatabase(cfg *config.Config, logger *logrus.Logger) (*sql.DB, err
 //
 // Returns:
 //   - Configured Gin router with all routes and middleware
-func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, passwordHandler *password.Handler, healthHandler *api.HealthHandler, metricsHandler *api.MetricsHandler, logger *logrus.Logger) *gin.Engine {
+func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, passwordHandler *password.Handler, healthHandler *api.HealthHandler, metricsHandler *api.MetricsHandler, jwtService *security.JWTService, logger *logrus.Logger) *gin.Engine {
 	// Set Gin mode based on environment
 	if cfg.IsProduction() {
 		gin.SetMode(gin.ReleaseMode)
@@ -469,8 +477,8 @@ func setupRouter(cfg *config.Config, authHandler *api.AuthHandler, passwordHandl
 	// Create router instance
 	router := gin.New()
 
-	// Initialize JWT middleware
-	jwtMiddleware := middleware.NewJWTMiddleware(cfg, logger)
+	// Initialize enhanced JWT middleware with security service
+	jwtMiddleware := middleware.NewJWTMiddleware(jwtService, cfg, logger)
 
 	// Add global middleware
 	router.Use(gin.Recovery())                               // Panic recovery
@@ -656,4 +664,109 @@ func securityHeadersMiddleware() gin.HandlerFunc {
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Next()
 	}
+}
+
+// initializeJWTService creates and configures the enhanced JWT security service.
+// This function sets up the JWT service with Redis-based token blacklisting for enterprise-grade security.
+//
+// Features initialized:
+// - JWT token generation with HMAC-SHA256 signing
+// - Redis-based distributed token blacklisting
+// - Configurable token expiration times
+// - Comprehensive token validation
+// - Protection against common JWT attacks
+//
+// The function automatically creates a Redis client for token blacklisting,
+// separate from the rate limiting Redis client to avoid conflicts.
+//
+// Parameters:
+//   - cfg: Application configuration containing JWT and Redis settings
+//   - logger: Structured logger for service operations
+//
+// Returns:
+//   - *security.JWTService: Configured JWT service ready for production use
+//   - error: Configuration or connection errors
+//
+// Environment variables used:
+//   - JWT_SECRET: Secret key for token signing (minimum 32 bytes)
+//   - JWT_ISSUER: Token issuer identifier (defaults to "auth-service")
+//   - JWT_ACCESS_TOKEN_EXPIRY: Access token lifetime (defaults to 15 minutes)
+//   - JWT_REFRESH_TOKEN_EXPIRY: Refresh token lifetime (defaults to 7 days)
+//   - REDIS_HOST, REDIS_PORT: Redis connection for blacklist
+//
+// Security considerations:
+// - Uses separate Redis database for JWT blacklist (DB 1)
+// - Validates JWT secret key length for security
+// - Enables comprehensive token validation features
+// - Provides immediate token revocation capabilities
+//
+// Usage:
+//
+//	jwtService, err := initializeJWTService(cfg, logger)
+//	if err != nil {
+//	    return fmt.Errorf("JWT service init failed: %w", err)
+//	}
+func initializeJWTService(cfg *config.Config, logger *logrus.Logger) (*security.JWTService, error) {
+	// Validate JWT secret key for security
+	if len(cfg.JWT.Secret) < 32 {
+		return nil, fmt.Errorf("JWT secret key must be at least 32 bytes for security, got %d bytes", len(cfg.JWT.Secret))
+	}
+
+	// Create dedicated Redis client for JWT blacklisting
+	// Use a separate database (DB 1) to avoid conflicts with rate limiting (DB 0)
+	redisClient := redis.NewClient(&redis.Options{
+		Addr:         fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		Password:     cfg.Redis.Password,
+		DB:           1, // Use separate DB for JWT blacklist
+		MaxRetries:   cfg.Redis.MaxRetries,
+		PoolSize:     cfg.Redis.PoolSize,
+		MinIdleConns: cfg.Redis.MinIdleConns,
+		ReadTimeout:  5 * time.Second,
+		WriteTimeout: 5 * time.Second,
+		PoolTimeout:  10 * time.Second,
+	})
+
+	// Test Redis connection for JWT blacklist
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		redisClient.Close()
+		return nil, fmt.Errorf("failed to connect to Redis for JWT blacklist at %s:%s DB=1: %w",
+			cfg.Redis.Host, cfg.Redis.Port, err)
+	}
+
+	// Create Redis-based token blacklist
+	blacklist := security.NewRedisTokenBlacklist(redisClient)
+
+	// Set issuer to service name if not configured
+	issuer := cfg.JWT.Issuer
+	if issuer == "" {
+		issuer = "auth-service"
+	}
+
+	// Set audience to service name if not configured
+	audience := issuer
+
+	// Initialize JWT service with production-ready configuration
+	jwtService := security.NewJWTService(
+		[]byte(cfg.JWT.Secret),     // Secret key for HMAC signing
+		issuer,                     // Token issuer identifier
+		audience,                   // Token audience identifier
+		blacklist,                  // Redis-based token blacklist
+		cfg.JWT.AccessTokenExpiry,  // Access token lifetime
+		cfg.JWT.RefreshTokenExpiry, // Refresh token lifetime
+	)
+
+	logger.WithFields(logrus.Fields{
+		"issuer":               issuer,
+		"audience":             audience,
+		"access_token_expiry":  cfg.JWT.AccessTokenExpiry,
+		"refresh_token_expiry": cfg.JWT.RefreshTokenExpiry,
+		"redis_addr":           fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+		"redis_db":             1,
+		"blacklist_enabled":    true,
+	}).Info("Enhanced JWT security service initialized successfully")
+
+	return jwtService, nil
 }

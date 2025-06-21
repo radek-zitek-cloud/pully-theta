@@ -265,3 +265,42 @@ func (prt *PasswordResetToken) IsTokenExpired() bool {
 func (prt *PasswordResetToken) IsValid() bool {
 	return !prt.IsTokenExpired() && !prt.IsUsed
 }
+
+// ToUserResponse converts a User entity to a UserResponse DTO.
+// This method creates a safe representation of user data for API responses,
+// excluding sensitive information like password hashes.
+//
+// The method performs the following conversions:
+// - Copies all safe user fields to the response DTO
+// - Excludes password hash and other sensitive data
+// - Formats timestamps appropriately for JSON serialization
+//
+// Returns:
+//   - UserResponse: Safe user data suitable for API responses
+//
+// Security considerations:
+// - Never includes password hash or other sensitive data
+// - Safe to use in public API responses
+// - Includes only data that the user is authorized to see
+//
+// Time Complexity: O(1)
+// Space Complexity: O(1)
+//
+// Usage:
+//
+//	user := &User{ID: uuid.New(), Email: "user@example.com", ...}
+//	response := user.ToUserResponse()
+//	// response contains safe user data for API serialization
+func (u *User) ToUserResponse() UserResponse {
+	return UserResponse{
+		ID:              u.ID,
+		Email:           u.Email,
+		FirstName:       u.FirstName,
+		LastName:        u.LastName,
+		IsEmailVerified: u.IsEmailVerified,
+		IsActive:        u.IsActive,
+		LastLoginAt:     u.LastLoginAt,
+		CreatedAt:       u.CreatedAt,
+		UpdatedAt:       u.UpdatedAt,
+	}
+}

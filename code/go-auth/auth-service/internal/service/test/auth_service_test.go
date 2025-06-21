@@ -15,6 +15,7 @@ import (
 
 	"auth-service/internal/config"
 	"auth-service/internal/domain"
+	"auth-service/internal/security"
 	"auth-service/internal/service"
 )
 
@@ -49,6 +50,9 @@ type AuthServiceTestSuite struct {
 	mockEmailService     *MockEmailService
 	mockRateLimitService *MockRateLimitService
 	mockMetricsRecorder  *MockAuthMetricsRecorder
+
+	// JWT service for testing
+	jwtService *security.JWTService
 
 	// Test configuration and logger
 	config *config.Config
@@ -123,6 +127,17 @@ func (suite *AuthServiceTestSuite) SetupTest() {
 	suite.mockRateLimitService = &MockRateLimitService{}
 	suite.mockMetricsRecorder = &MockAuthMetricsRecorder{}
 
+	// Create test JWT service
+	mockBlacklist := &MockTokenBlacklist{}
+	suite.jwtService = security.NewJWTService(
+		[]byte("test-secret-key-at-least-32-bytes-long"),
+		"test-issuer",
+		"test-audience",
+		mockBlacklist,
+		15*time.Minute, // access token TTL
+		7*24*time.Hour, // refresh token TTL
+	)
+
 	// Create AuthService with mocked dependencies
 	var err error
 	suite.authService, err = service.NewAuthService(
@@ -135,6 +150,7 @@ func (suite *AuthServiceTestSuite) SetupTest() {
 		suite.mockEmailService,
 		suite.mockRateLimitService,
 		suite.mockMetricsRecorder,
+		suite.jwtService,
 	)
 	require.NoError(suite.T(), err, "Failed to create AuthService")
 }
@@ -163,6 +179,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_Success() {
 		suite.mockEmailService,
 		suite.mockRateLimitService,
 		suite.mockMetricsRecorder,
+		suite.jwtService,
 	)
 
 	assert.NoError(suite.T(), err)
@@ -182,6 +199,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 		emailService      service.EmailService
 		rateLimitService  service.RateLimitService
 		metricsRecorder   service.AuthMetricsRecorder
+		jwtService        *security.JWTService
 		expectedError     string
 	}{
 		{
@@ -195,6 +213,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 			emailService:      suite.mockEmailService,
 			rateLimitService:  suite.mockRateLimitService,
 			metricsRecorder:   suite.mockMetricsRecorder,
+			jwtService:        suite.jwtService,
 			expectedError:     "user repository is required",
 		},
 		{
@@ -208,6 +227,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 			emailService:      suite.mockEmailService,
 			rateLimitService:  suite.mockRateLimitService,
 			metricsRecorder:   suite.mockMetricsRecorder,
+			jwtService:        suite.jwtService,
 			expectedError:     "refresh token repository is required",
 		},
 		{
@@ -221,6 +241,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 			emailService:      suite.mockEmailService,
 			rateLimitService:  suite.mockRateLimitService,
 			metricsRecorder:   suite.mockMetricsRecorder,
+			jwtService:        suite.jwtService,
 			expectedError:     "logger is required",
 		},
 		{
@@ -234,7 +255,22 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 			emailService:      suite.mockEmailService,
 			rateLimitService:  suite.mockRateLimitService,
 			metricsRecorder:   suite.mockMetricsRecorder,
+			jwtService:        suite.jwtService,
 			expectedError:     "config is required",
+		},
+		{
+			name:              "nil jwt service",
+			userRepo:          suite.mockUserRepo,
+			refreshTokenRepo:  suite.mockRefreshTokenRepo,
+			passwordResetRepo: suite.mockPasswordResetRepo,
+			auditRepo:         suite.mockAuditRepo,
+			logger:            suite.logger,
+			config:            suite.config,
+			emailService:      suite.mockEmailService,
+			rateLimitService:  suite.mockRateLimitService,
+			metricsRecorder:   suite.mockMetricsRecorder,
+			jwtService:        nil,
+			expectedError:     "JWT service is required",
 		},
 	}
 
@@ -250,6 +286,7 @@ func (suite *AuthServiceTestSuite) TestNewAuthService_MissingDependencies() {
 				tc.emailService,
 				tc.rateLimitService,
 				tc.metricsRecorder,
+				tc.jwtService,
 			)
 
 			assert.Error(t, err)

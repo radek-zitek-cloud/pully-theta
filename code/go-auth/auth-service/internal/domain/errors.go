@@ -49,6 +49,14 @@ var (
 	// required fields or contain invalid data.
 	ErrInvalidTokenClaims = errors.New("invalid token claims")
 
+	// ErrTokenBlacklisted is returned when attempting to use a token that has been
+	// explicitly blacklisted (revoked) before its natural expiration time.
+	ErrTokenBlacklisted = errors.New("token has been blacklisted")
+
+	// ErrInvalidTokenType is returned when a token is of the wrong type for the
+	// requested operation (e.g., using a refresh token where access token is expected).
+	ErrInvalidTokenType = errors.New("invalid token type")
+
 	// ErrInvalidUserID is returned when a user ID cannot be parsed as a valid UUID
 	// or is not in the expected format.
 	ErrInvalidUserID = errors.New("invalid user ID format")

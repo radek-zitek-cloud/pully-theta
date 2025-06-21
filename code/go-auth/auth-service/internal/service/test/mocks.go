@@ -349,3 +349,21 @@ func (m *MockAuthMetricsRecorder) RecordLogoutSuccess() {
 func (m *MockAuthMetricsRecorder) RecordLogoutFailure(reason string) {
 	m.Called(reason)
 }
+
+// MockTokenBlacklist provides a mock implementation of security.TokenBlacklist.
+// This mock is used in unit tests to isolate the JWT service from Redis dependencies.
+type MockTokenBlacklist struct {
+	mock.Mock
+}
+
+// Add mocks adding a token to the blacklist.
+func (m *MockTokenBlacklist) Add(ctx context.Context, token string, expiry time.Time) error {
+	args := m.Called(ctx, token, expiry)
+	return args.Error(0)
+}
+
+// IsBlacklisted mocks checking if a token is blacklisted.
+func (m *MockTokenBlacklist) IsBlacklisted(ctx context.Context, token string) bool {
+	args := m.Called(ctx, token)
+	return args.Bool(0)
+}

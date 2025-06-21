@@ -9,6 +9,7 @@ import (
 
 	"auth-service/internal/config"
 	"auth-service/internal/domain"
+	"auth-service/internal/security"
 )
 
 // EmailService defines the interface for sending emails.
@@ -95,9 +96,10 @@ type AuthMetricsRecorder interface {
 // - Follows SOLID principles
 type AuthService struct {
 	// Composed services for delegated operations
-	core    *AuthServiceCore
-	tokens  *AuthServiceTokens
-	profile *AuthServiceProfile
+	core       *AuthServiceCore
+	tokens     *AuthServiceTokens
+	profile    *AuthServiceProfile
+	jwtService *security.JWTService
 }
 
 // NewAuthService creates a new AuthService instance by composing the modular services.
@@ -114,6 +116,7 @@ type AuthService struct {
 //   - emailService: Service for sending emails
 //   - rateLimitService: Service for rate limiting
 //   - metricsRecorder: Service for recording metrics
+//   - jwtService: Service for JWT token operations
 //
 // Returns:
 //   - Configured AuthService facade
@@ -123,7 +126,7 @@ type AuthService struct {
 //
 //	authService, err := NewAuthService(
 //	    userRepo, tokenRepo, resetRepo, auditRepo,
-//	    logger, config, emailSvc, rateLimitSvc, metricsRecorder,
+//	    logger, config, emailSvc, rateLimitSvc, metricsRecorder, jwtService,
 //	)
 //	if err != nil {
 //	    log.Fatal(err)
@@ -138,6 +141,7 @@ func NewAuthService(
 	emailService EmailService,
 	rateLimitService RateLimitService,
 	metricsRecorder AuthMetricsRecorder,
+	jwtService *security.JWTService,
 ) (*AuthService, error) {
 	// Validate required dependencies
 	if userRepo == nil {
@@ -166,6 +170,9 @@ func NewAuthService(
 	}
 	if metricsRecorder == nil {
 		return nil, fmt.Errorf("metrics recorder is required")
+	}
+	if jwtService == nil {
+		return nil, fmt.Errorf("JWT service is required")
 	}
 
 	// Create shared utilities
@@ -196,9 +203,10 @@ func NewAuthService(
 	}
 
 	return &AuthService{
-		core:    core,
-		tokens:  tokens,
-		profile: profile,
+		core:       core,
+		tokens:     tokens,
+		profile:    profile,
+		jwtService: jwtService,
 	}, nil
 }
 
@@ -321,4 +329,75 @@ func (s *AuthService) LogAuditEvent(ctx context.Context, auditLog *domain.AuditL
 	// For now, just return nil since audit logging is handled internally by the sub-services
 	// In the future, this could delegate to a dedicated audit service
 	return nil
+}
+
+// ====================================================================================
+// JWT TOKEN OPERATIONS
+// These methods delegate to the JWT security service
+// ====================================================================================
+
+// GenerateTokenPair creates new JWT access and refresh tokens for a user.
+// This method uses the enhanced JWT security service for token generation.
+//
+// Parameters:
+//   - user: User entity for token claims
+//
+// Returns:
+//   - AuthResponse with JWT tokens and user data
+//   - Error if token generation fails
+//
+// Security Features:
+// - HMAC-SHA256 signing for token integrity
+// - Configurable token expiration times
+// - Secure random JTI generation
+// - Token type validation (access vs refresh)
+//
+// Time Complexity: O(1)
+// Space Complexity: O(1)
+func (s *AuthService) GenerateTokenPair(user *domain.User) (*domain.AuthResponse, error) {
+	return s.jwtService.GenerateTokenPair(user)
+}
+
+// ValidateToken validates a JWT token and returns the associated user.
+// This method uses the enhanced JWT security service for token validation.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - tokenString: JWT token string to validate
+//
+// Returns:
+//   - User entity from token claims
+//   - Error if token is invalid or expired
+//
+// Security Features:
+// - Signature verification using HMAC-SHA256
+// - Token expiration validation
+// - Blacklist checking for revoked tokens
+// - Issuer and audience validation
+//
+// Time Complexity: O(1) + O(blacklist_check)
+// Space Complexity: O(1)
+func (s *AuthService) ValidateToken(ctx context.Context, tokenString string) (*domain.User, error) {
+	return s.jwtService.ValidateToken(ctx, tokenString)
+}
+
+// RevokeToken revokes a JWT token by adding it to the blacklist.
+// This method uses the enhanced JWT security service for token revocation.
+//
+// Parameters:
+//   - ctx: Context for cancellation and timeouts
+//   - tokenString: JWT token string to revoke
+//
+// Returns:
+//   - Error if token revocation fails
+//
+// Security Features:
+// - Immediate token invalidation via blacklist
+// - Automatic expiration-based cleanup
+// - Protection against token replay attacks
+//
+// Time Complexity: O(1) for blacklist operations
+// Space Complexity: O(1)
+func (s *AuthService) RevokeToken(ctx context.Context, tokenString string) error {
+	return s.jwtService.RevokeToken(ctx, tokenString)
 }

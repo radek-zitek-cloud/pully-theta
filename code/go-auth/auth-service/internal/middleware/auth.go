@@ -12,6 +12,7 @@ import (
 
 	"auth-service/internal/config"
 	"auth-service/internal/domain"
+	"auth-service/internal/security"
 )
 
 // ContextKey defines custom context keys to avoid key collisions
@@ -37,58 +38,76 @@ type JWTClaims struct {
 }
 
 // JWTMiddleware provides JWT token validation and user context injection.
-// This middleware validates JWT tokens, extracts user information,
+// This middleware validates JWT tokens using the enhanced security service,
 // and injects the user context into the request for downstream handlers.
 //
 // Features:
 // - Bearer token extraction from Authorization header
-// - JWT signature validation using configured secret
-// - Token expiration checking
+// - Enhanced JWT signature validation using security service
+// - Token blacklist checking for immediate revocation
+// - Token expiration and type validation
 // - User context injection for handlers
-// - Proper error responses for authentication failures
+// - Comprehensive security logging and metrics
 //
 // The middleware expects tokens in the format: "Bearer <token>"
-// and validates them against the configured JWT secret.
+// and validates them using the enhanced JWT security service.
 type JWTMiddleware struct {
-	config *config.Config
-	logger *logrus.Logger
+	jwtService *security.JWTService
+	config     *config.Config
+	logger     *logrus.Logger
 }
 
 // NewJWTMiddleware creates a new JWT authentication middleware instance.
+// This constructor initializes the middleware with the enhanced JWT security service
+// for production-grade token validation and security features.
 //
 // Parameters:
+//   - jwtService: Enhanced JWT security service for token operations
 //   - cfg: Application configuration containing JWT settings
 //   - logger: Logger for authentication events and errors
 //
 // Returns:
-//   - Configured JWT middleware instance
-func NewJWTMiddleware(cfg *config.Config, logger *logrus.Logger) *JWTMiddleware {
+//   - Configured JWT middleware instance with enhanced security
+//
+// Usage:
+//
+//	jwtMiddleware := NewJWTMiddleware(jwtService, cfg, logger)
+//	router.Use(jwtMiddleware.RequireAuth())
+func NewJWTMiddleware(jwtService *security.JWTService, cfg *config.Config, logger *logrus.Logger) *JWTMiddleware {
 	return &JWTMiddleware{
-		config: cfg,
-		logger: logger,
+		jwtService: jwtService,
+		config:     cfg,
+		logger:     logger,
 	}
 }
 
 // RequireAuth creates a Gin middleware that enforces JWT authentication.
-// This middleware validates JWT tokens and injects user context into requests.
+// This middleware validates JWT tokens using the enhanced security service
+// and injects user context into requests.
 //
 // Authentication flow:
 // 1. Extract Bearer token from Authorization header
-// 2. Parse and validate JWT token signature
-// 3. Check token expiration and type (must be "access")
-// 4. Extract user ID and inject into request context
+// 2. Validate token using enhanced JWT security service (includes blacklist check)
+// 3. Extract user information from validated token
+// 4. Inject user context into request for downstream handlers
 // 5. Continue to next handler or return authentication error
 //
+// Security features:
+// - Token blacklist checking for immediate revocation
+// - Algorithm validation to prevent substitution attacks
+// - Comprehensive token validation (signature, expiration, claims)
+// - Protection against common JWT security vulnerabilities
+//
 // Error responses:
-// - 401 Unauthorized: Missing, invalid, or expired token
-// - 403 Forbidden: Valid token but insufficient permissions
+// - 401 Unauthorized: Missing, invalid, expired, or blacklisted token
+// - 500 Internal Server Error: System errors during validation
 //
 // Context injection:
 // - user_id: UUID of the authenticated user
 // - request_id: Correlation ID for request tracing
 //
 // Returns:
-//   - Gin middleware function for JWT authentication
+//   - Gin middleware function for enhanced JWT authentication
 func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Generate request ID for correlation
@@ -96,7 +115,7 @@ func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 		c.Set(string(RequestIDKey), requestID)
 
 		// Extract token from Authorization header
-		token, err := m.extractTokenFromHeader(c)
+		tokenString, err := m.extractTokenFromHeader(c)
 		if err != nil {
 			m.logger.WithFields(logrus.Fields{
 				"request_id": requestID,
@@ -115,18 +134,40 @@ func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Parse and validate JWT token
-		claims, err := m.validateToken(token)
+		// Validate token using enhanced JWT security service
+		// This includes blacklist checking, signature validation, and comprehensive security checks
+		user, err := m.jwtService.ValidateToken(c.Request.Context(), tokenString)
 		if err != nil {
+			// Determine error type for appropriate response
+			var message string
+			var logLevel logrus.Level = logrus.WarnLevel
+
+			switch err {
+			case domain.ErrTokenBlacklisted:
+				message = "Token has been revoked"
+			case domain.ErrInvalidToken:
+				message = "Invalid or malformed token"
+			case domain.ErrTokenExpired:
+				message = "Token has expired"
+			case domain.ErrInvalidTokenType:
+				message = "Invalid token type"
+			case domain.ErrInvalidTokenClaims:
+				message = "Invalid token claims"
+			default:
+				message = "Token validation failed"
+				logLevel = logrus.ErrorLevel // System errors should be logged as errors
+			}
+
 			m.logger.WithFields(logrus.Fields{
 				"request_id": requestID,
 				"error":      err.Error(),
 				"ip":         c.ClientIP(),
-			}).Warn("Authentication failed: token validation error")
+				"user_agent": c.GetHeader("User-Agent"),
+			}).Log(logLevel, "Authentication failed: token validation error")
 
 			c.JSON(http.StatusUnauthorized, domain.ErrorResponse{
 				Error:     "unauthorized",
-				Message:   "Invalid or expired token",
+				Message:   message,
 				RequestID: requestID,
 				Timestamp: time.Now(),
 			})
@@ -134,36 +175,15 @@ func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 			return
 		}
 
-		// Verify token type is "access"
-		if claims.TokenType != "access" {
+		// Validate user object from token
+		if user == nil || user.ID == uuid.Nil {
 			m.logger.WithFields(logrus.Fields{
 				"request_id": requestID,
-				"token_type": claims.TokenType,
-				"user_id":    claims.UserID,
-			}).Warn("Authentication failed: invalid token type")
+			}).Error("Authentication failed: invalid user from token")
 
-			c.JSON(http.StatusUnauthorized, domain.ErrorResponse{
-				Error:     "unauthorized",
-				Message:   "Invalid token type",
-				RequestID: requestID,
-				Timestamp: time.Now(),
-			})
-			c.Abort()
-			return
-		}
-
-		// Parse user ID as UUID
-		userID, err := uuid.Parse(claims.UserID)
-		if err != nil {
-			m.logger.WithFields(logrus.Fields{
-				"request_id": requestID,
-				"user_id":    claims.UserID,
-				"error":      err.Error(),
-			}).Error("Authentication failed: invalid user ID format")
-
-			c.JSON(http.StatusUnauthorized, domain.ErrorResponse{
-				Error:     "unauthorized",
-				Message:   "Invalid user identifier",
+			c.JSON(http.StatusInternalServerError, domain.ErrorResponse{
+				Error:     "internal_error",
+				Message:   "Authentication system error",
 				RequestID: requestID,
 				Timestamp: time.Now(),
 			})
@@ -172,16 +192,17 @@ func (m *JWTMiddleware) RequireAuth() gin.HandlerFunc {
 		}
 
 		// Inject user context into request
-		c.Set(string(UserIDKey), userID)
+		c.Set(string(UserIDKey), user.ID)
+		c.Set(string(UserKey), user)
 
 		// Log successful authentication
 		m.logger.WithFields(logrus.Fields{
 			"request_id": requestID,
-			"user_id":    userID.String(),
-			"email":      claims.Email,
+			"user_id":    user.ID.String(),
+			"email":      user.Email,
 			"method":     c.Request.Method,
 			"path":       c.Request.URL.Path,
-		}).Debug("User authenticated successfully")
+		}).Debug("User authenticated successfully with enhanced JWT security")
 
 		// Continue to next handler
 		c.Next()
