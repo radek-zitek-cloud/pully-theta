@@ -18,7 +18,7 @@ import (
 	"auth-service/internal/service"
 )
 
-// AuthServiceTestSuite provides a comprehensive test suite for AuthService.
+// AuthServiceTestSuite provides a comprehensive te	suite.mockMetricsRecorder.On("RecordLoginFailure", "invalid_password").Return().Once()t suite for AuthService.
 // This suite tests all core authentication operations including registration,
 // login, token management, and user profile operations.
 //
@@ -291,8 +291,9 @@ func (suite *AuthServiceTestSuite) TestRegister_Success() {
 	// Email is sent asynchronously, so we need to match any context
 	suite.mockEmailService.On("SendWelcomeEmail", mock.AnythingOfType("*context.timerCtx"), "newuser@example.com", "New User", "").Return(nil)
 
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "register", "success").Once()
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockMetricsRecorder.On("RecordRegistrationAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordRegistrationSuccess").Return().Once()
 
 	// Execute registration
 	user, err := suite.authService.Register(suite.ctx, req, suite.clientIP, suite.userAgent)
@@ -328,11 +329,15 @@ func (suite *AuthServiceTestSuite) TestRegister_EmailAlreadyExists() {
 		Email: "existing@example.com",
 	}
 	suite.mockUserRepo.On("GetByEmail", suite.ctx, "existing@example.com").Return(existingUser, nil)
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "register", "failure").Once()
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockMetricsRecorder.On("RecordRegistrationAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordRegistrationFailure", "email_exists").Return().Once()
 
 	// Execute registration
 	user, err := suite.authService.Register(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify failure
 	assert.Error(suite.T(), err)
@@ -350,11 +355,15 @@ func (suite *AuthServiceTestSuite) TestRegister_WeakPassword() {
 	}
 
 	// Mock audit log for failure
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "register", "failure").Once()
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockMetricsRecorder.On("RecordRegistrationAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordRegistrationFailure", "weak_password").Return().Once()
 
 	// Execute registration
 	user, err := suite.authService.Register(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify failure
 	assert.Error(suite.T(), err)
@@ -389,11 +398,18 @@ func (suite *AuthServiceTestSuite) TestLogin_Success() {
 	suite.mockUserRepo.On("UpdateLastLogin", suite.ctx, suite.testUser.ID, mock.AnythingOfType("time.Time")).Return(nil)
 
 	// Mock audit logging
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 	suite.mockRateLimitService.On("RecordLoginAttempt", suite.ctx, suite.clientIP, true).Return(nil)
+
+	// Mock metrics recording - expect both the parameterless and parametrized calls
+	suite.mockMetricsRecorder.On("RecordLoginAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLoginSuccess").Return().Once()
 
 	// Execute login
 	response, err := suite.authService.Login(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify successful login
 	assert.NoError(suite.T(), err)
@@ -421,12 +437,16 @@ func (suite *AuthServiceTestSuite) TestLogin_InvalidCredentials() {
 	suite.mockUserRepo.On("GetByEmail", suite.ctx, "test@example.com").Return(suite.testUser, nil)
 
 	// Mock failure logging and metrics
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 	suite.mockRateLimitService.On("RecordLoginAttempt", suite.ctx, suite.clientIP, false).Return(nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "login", "failure").Once()
+	suite.mockMetricsRecorder.On("RecordLoginAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLoginFailure", "invalid_credentials").Return().Once()
 
 	// Execute login
 	response, err := suite.authService.Login(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify failure
 	assert.Error(suite.T(), err)
@@ -448,12 +468,16 @@ func (suite *AuthServiceTestSuite) TestLogin_UserNotFound() {
 	suite.mockUserRepo.On("GetByEmail", suite.ctx, "nonexistent@example.com").Return(nil, domain.ErrUserNotFound)
 
 	// Mock failure logging and metrics
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 	suite.mockRateLimitService.On("RecordLoginAttempt", suite.ctx, suite.clientIP, false).Return(nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "login", "failure").Once()
+	suite.mockMetricsRecorder.On("RecordLoginAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLoginFailure", "user_not_found").Return().Once()
 
 	// Execute login
 	response, err := suite.authService.Login(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify failure
 	assert.Error(suite.T(), err)
@@ -470,11 +494,15 @@ func (suite *AuthServiceTestSuite) TestLogin_RateLimited() {
 
 	// Mock rate limit exceeded
 	suite.mockRateLimitService.On("CheckLoginAttempts", suite.ctx, suite.clientIP).Return(false, nil)
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "login", "failure").Once()
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockMetricsRecorder.On("RecordLoginAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLoginFailure", "rate_limit").Return().Once()
 
 	// Execute login
 	response, err := suite.authService.Login(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify rate limit failure
 	assert.Error(suite.T(), err)
@@ -499,13 +527,17 @@ func (suite *AuthServiceTestSuite) TestLogin_InactiveUser() {
 	// Mock user lookup
 	suite.mockUserRepo.On("GetByEmail", suite.ctx, "test@example.com").Return(&inactiveUser, nil)
 
-	// Mock failure logging and metrics
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	// Mock failure logging and metrics (audit log uses its own timeout context)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 	suite.mockRateLimitService.On("RecordLoginAttempt", suite.ctx, suite.clientIP, false).Return(nil)
-	suite.mockMetricsRecorder.On("RecordAuthOperation", "login", "failure").Once()
+	suite.mockMetricsRecorder.On("RecordLoginAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLoginFailure", "account_inactive").Return().Once()
 
 	// Execute login
 	response, err := suite.authService.Login(suite.ctx, req, suite.clientIP, suite.userAgent)
+
+	// Give the audit log goroutine a moment to execute
+	time.Sleep(10 * time.Millisecond)
 
 	// Verify failure - service returns ErrInvalidCredentials to not reveal account state
 	assert.Error(suite.T(), err)
@@ -530,7 +562,11 @@ func (suite *AuthServiceTestSuite) TestLogout_Success() {
 	suite.mockRefreshTokenRepo.On("RevokeToken", suite.ctx, refreshTokenValue).Return(nil)
 
 	// Mock audit logging
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+
+	// Mock metrics recording
+	suite.mockMetricsRecorder.On("RecordLogoutAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLogoutSuccess").Return().Once()
 
 	// Execute logout
 	err := suite.authService.Logout(suite.ctx, refreshTokenValue, suite.clientIP, suite.userAgent)
@@ -545,6 +581,11 @@ func (suite *AuthServiceTestSuite) TestLogout_InvalidToken() {
 
 	// Mock token not found - but logout should succeed anyway
 	suite.mockRefreshTokenRepo.On("GetByToken", suite.ctx, refreshTokenValue).Return(nil, domain.ErrTokenNotFound)
+
+	// Mock audit log and metrics recording
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockMetricsRecorder.On("RecordLogoutAttempt").Return().Once()
+	suite.mockMetricsRecorder.On("RecordLogoutSuccess").Return().Once()
 
 	// Execute logout
 	err := suite.authService.Logout(suite.ctx, refreshTokenValue, suite.clientIP, suite.userAgent)
@@ -572,7 +613,7 @@ func (suite *AuthServiceTestSuite) TestRefreshToken_Success() {
 	suite.mockUserRepo.On("GetByID", suite.ctx, suite.testUser.ID).Return(suite.testUser, nil)
 
 	// Mock audit logging
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 
 	// Execute token refresh
 	response, err := suite.authService.RefreshToken(suite.ctx, req, suite.clientIP, suite.userAgent)
@@ -604,7 +645,7 @@ func (suite *AuthServiceTestSuite) TestRefreshToken_ExpiredToken() {
 	suite.mockRefreshTokenRepo.On("GetByToken", suite.ctx, req.RefreshToken).Return(expiredToken, nil)
 
 	// Mock audit logging for failure
-	suite.mockAuditRepo.On("Create", suite.ctx, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
+	suite.mockAuditRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.AuditLog")).Return(nil, nil)
 
 	// Execute token refresh
 	response, err := suite.authService.RefreshToken(suite.ctx, req, suite.clientIP, suite.userAgent)

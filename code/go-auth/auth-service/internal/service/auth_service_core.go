@@ -371,7 +371,8 @@ func (s *AuthServiceCore) Login(ctx context.Context, req *domain.LoginRequest, c
 		s.metricsRecorder.RecordLoginFailure("account_inactive")
 		// Record failed attempt for rate limiting
 		s.rateLimitService.RecordLoginAttempt(ctx, clientIP, false)
-		return nil, domain.ErrAccountInactive
+		// Return generic error to prevent account enumeration attacks
+		return nil, domain.ErrInvalidCredentials
 	}
 
 	// Verify password

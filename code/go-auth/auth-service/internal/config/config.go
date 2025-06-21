@@ -90,55 +90,67 @@ type ServerConfig struct {
 // - Enable SSL in production environments (set SSLMode to "require" or "verify-full")
 // - Use strong passwords and restrict network access
 // - Monitor connection metrics to detect potential attacks
+//
+// Environment variable mapping:
+// - DB_HOST: Database server hostname or IP address
+// - DB_PORT: Database server port (default: 5432)
+// - DB_USER: Database username for authentication
+// - DB_PASSWORD: Database password (should be strong and unique)
+// - DB_NAME: Database name to connect to
+// - DB_SSLMODE: SSL/TLS connection security mode (default: disable)
+// - DB_MAX_OPEN_CONNS: Maximum number of open connections (default: 25)
+// - DB_MAX_IDLE_CONNS: Maximum number of idle connections (default: 5)
+// - DB_CONN_MAX_LIFETIME: Maximum connection lifetime (default: 1h)
+// - DB_CONN_MAX_IDLE_TIME: Maximum connection idle time (default: 15m)
 type DatabaseConfig struct {
 	// Host is the database server hostname or IP address
 	// Example: "localhost", "db.example.com", "192.168.1.100"
-	Host string `json:"host"`
+	Host string `env:"DB_HOST" json:"host"`
 
 	// Port is the database server port (typically 5432 for PostgreSQL)
-	// Example: "5432", "5433"
-	Port string `json:"port"`
+	// Must be a valid port number between 1-65535
+	Port int `env:"DB_PORT" json:"port" default:"5432"`
 
-	// User is the database username for authentication
+	// Username is the database username for authentication
 	// Should have minimum required privileges for the application
-	User string `json:"user"`
+	Username string `env:"DB_USER" json:"username"`
 
 	// Password is the database password (should be strong and unique)
 	// Excluded from JSON serialization for security
-	Password string `json:"-"`
+	Password string `env:"DB_PASSWORD" json:"password"`
 
-	// Name is the database name to connect to
+	// Database is the database name to connect to
 	// Example: "auth_service", "production_db"
-	Name string `json:"name"`
+	Database string `env:"DB_NAME" json:"database"`
 
 	// SSLMode controls SSL/TLS connection security
 	// Values: "disable", "require", "verify-ca", "verify-full"
 	// Production should use "require" or higher
-	SSLMode string `json:"ssl_mode"`
+	SSLMode string `env:"DB_SSLMODE" json:"ssl_mode" default:"disable"`
 
 	// MaxOpenConns is the maximum number of open connections to the database
 	// Prevents overwhelming the database server
 	// Default: 25 (suitable for most applications)
 	// Consider increasing for high-traffic applications
-	MaxOpenConns int `json:"max_open_conns"`
+	MaxOpenConns int `env:"DB_MAX_OPEN_CONNS" json:"max_open_conns" default:"25"`
 
 	// MaxIdleConns is the maximum number of connections in the idle connection pool
 	// Keeps connections ready for immediate use
 	// Default: 5 (should be <= MaxOpenConns)
 	// Higher values improve response time but use more resources
-	MaxIdleConns int `json:"max_idle_conns"`
+	MaxIdleConns int `env:"DB_MAX_IDLE_CONNS" json:"max_idle_conns" default:"5"`
 
 	// ConnMaxLifetime is the maximum amount of time a connection may be reused
 	// Prevents stale connections and handles network configuration changes
 	// Default: 1 hour (good balance between performance and freshness)
 	// Consider shorter times for unstable networks
-	ConnMaxLifetime time.Duration `json:"conn_max_lifetime"`
+	ConnMaxLifetime time.Duration `env:"DB_CONN_MAX_LIFETIME" json:"conn_max_lifetime" default:"1h"`
 
 	// ConnMaxIdleTime is the maximum amount of time a connection may be idle
 	// Releases unused connections to conserve database resources
 	// Default: 15 minutes (balances resource usage and connection overhead)
 	// Should be less than ConnMaxLifetime
-	ConnMaxIdleTime time.Duration `json:"conn_max_idle_time"`
+	ConnMaxIdleTime time.Duration `env:"DB_CONN_MAX_IDLE_TIME" json:"conn_max_idle_time" default:"15m"`
 }
 
 // JWTConfig contains JWT token signing and validation settings.
@@ -347,15 +359,15 @@ func Load() (*Config, error) {
 		},
 		Database: DatabaseConfig{
 			Host:            getEnvOrFail("DB_HOST"),
-			Port:            getEnvOrDefault("DB_PORT", "5432"),
-			User:            getEnvOrFail("DB_USER"),
+			Port:            getIntOrDefault("DB_PORT", 5432),
+			Username:        getEnvOrFail("DB_USER"),
 			Password:        getEnvOrFail("DB_PASSWORD"),
-			Name:            getEnvOrFail("DB_NAME"),
-			SSLMode:         getEnvOrDefault("DB_SSL_MODE", "disable"),
+			Database:        getEnvOrFail("DB_NAME"),
+			SSLMode:         getEnvOrDefault("DB_SSLMODE", "disable"),
 			MaxOpenConns:    getIntOrDefault("DB_MAX_OPEN_CONNS", 25),
 			MaxIdleConns:    getIntOrDefault("DB_MAX_IDLE_CONNS", 5),
-			ConnMaxLifetime: getDurationOrDefault("DB_CONN_MAX_LIFETIME", 1*time.Hour),     // Increased default to 1 hour
-			ConnMaxIdleTime: getDurationOrDefault("DB_CONN_MAX_IDLE_TIME", 15*time.Minute), // Added idle time setting
+			ConnMaxLifetime: getDurationOrDefault("DB_CONN_MAX_LIFETIME", 1*time.Hour),
+			ConnMaxIdleTime: getDurationOrDefault("DB_CONN_MAX_IDLE_TIME", 15*time.Minute),
 		},
 		JWT: JWTConfig{
 			Secret:             getEnvOrFail("JWT_SECRET"),
@@ -444,13 +456,13 @@ func (c *Config) Validate() error {
 	if c.Database.Host == "" {
 		return fmt.Errorf("database host is required")
 	}
-	if c.Database.User == "" {
-		return fmt.Errorf("database user is required")
+	if c.Database.Username == "" {
+		return fmt.Errorf("database username is required")
 	}
 	if c.Database.Password == "" {
 		return fmt.Errorf("database password is required")
 	}
-	if c.Database.Name == "" {
+	if c.Database.Database == "" {
 		return fmt.Errorf("database name is required")
 	}
 
@@ -487,12 +499,12 @@ func (c *Config) Validate() error {
 //
 //	postgres://user:password@localhost:5432/dbname?sslmode=disable
 func (c *Config) GetDatabaseURL() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=%s",
-		c.Database.User,
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+		c.Database.Username,
 		c.Database.Password,
 		c.Database.Host,
 		c.Database.Port,
-		c.Database.Name,
+		c.Database.Database,
 		c.Database.SSLMode,
 	)
 }

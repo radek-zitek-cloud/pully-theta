@@ -239,6 +239,36 @@ func (m *MockRateLimitService) RecordLoginAttempt(ctx context.Context, identifie
 	return args.Error(0)
 }
 
+// CheckPasswordResetAttempts mocks rate limit checking for password reset attempts.
+// This method validates whether the user/IP has exceeded the allowed number of
+// password reset requests within the configured time window.
+//
+// Parameters:
+//   - ctx: Request context for cancellation and timeout handling
+//   - identifier: The identifier to check (email or IP address)
+//
+// Returns:
+//   - bool: true if within rate limits, false if rate limit exceeded
+//   - error: Any error that occurred during the rate limit check
+func (m *MockRateLimitService) CheckPasswordResetAttempts(ctx context.Context, identifier string) (bool, error) {
+	args := m.Called(ctx, identifier)
+	return args.Bool(0), args.Error(1)
+}
+
+// RecordPasswordResetAttempt mocks recording a password reset attempt for rate limiting.
+// This method increments the password reset attempt counter for the given identifier.
+//
+// Parameters:
+//   - ctx: Request context for cancellation and timeout handling
+//   - identifier: The identifier to record attempt for (email or IP address)
+//
+// Returns:
+//   - error: Any error that occurred during the recording operation
+func (m *MockRateLimitService) RecordPasswordResetAttempt(ctx context.Context, identifier string) error {
+	args := m.Called(ctx, identifier)
+	return args.Error(0)
+}
+
 // MockAuthMetricsRecorder provides a mock implementation of service.AuthMetricsRecorder.
 // This mock implements all methods of the AuthMetricsRecorder interface for testing
 // authentication and authorization metrics recording operations.

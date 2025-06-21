@@ -3,11 +3,9 @@ package api
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
 	"github.com/sirupsen/logrus"
 
 	"auth-service/internal/domain"
@@ -28,6 +26,7 @@ import (
 //
 // Dependencies:
 // - AuthService: Core authentication business logic
+// - HTTPErrorMapper: Centralized error handling and response mapping
 // - Logger: Structured logging for requests and errors
 //
 // Security features:
@@ -36,26 +35,42 @@ import (
 // - CORS support for web applications
 // - Request/response logging for audit
 // - Error message sanitization to prevent information disclosure
+// - Consistent error response format via centralized error mapper
+//
+// Architecture:
+// The handler uses the HTTPErrorMapper for all error responses, ensuring
+// consistent error handling, proper logging, and security considerations
+// across all authentication endpoints.
 type AuthHandler struct {
 	authService *service.AuthService
+	errorMapper *HTTPErrorMapper
 	logger      *logrus.Logger
 }
 
 // NewAuthHandler creates a new authentication handler instance.
-// This constructor validates dependencies and returns a configured handler.
+// This constructor validates dependencies and returns a configured handler
+// with centralized error mapping for consistent error responses.
 //
 // Parameters:
 //   - authService: Service containing authentication business logic
 //   - logger: Structured logger for request handling
 //
 // Returns:
-//   - Configured AuthHandler instance
+//   - Configured AuthHandler instance with HTTPErrorMapper
 //   - Error if any dependency is nil
 //
 // Example usage:
 //
-//	authHandler := NewAuthHandler(authService, logger)
+//	authHandler, err := NewAuthHandler(authService, logger)
+//	if err != nil {
+//	    log.Fatal("Failed to create auth handler:", err)
+//	}
 //	router.POST("/auth/login", authHandler.Login)
+//
+// Architecture:
+// The constructor automatically initializes the HTTPErrorMapper using the
+// provided logger, ensuring all error responses follow the same format
+// and security practices defined in the refactoring plan.
 func NewAuthHandler(authService *service.AuthService, logger *logrus.Logger) (*AuthHandler, error) {
 	if authService == nil {
 		return nil, fmt.Errorf("auth service is required")
@@ -66,6 +81,7 @@ func NewAuthHandler(authService *service.AuthService, logger *logrus.Logger) (*A
 
 	return &AuthHandler{
 		authService: authService,
+		errorMapper: NewHTTPErrorMapper(logger),
 		logger:      logger,
 	}, nil
 }
@@ -144,21 +160,21 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	var req domain.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Invalid registration request body")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Invalid request format", err, requestID)
+		h.errorMapper.MapError(c, err, "register_request_parsing", requestID)
 		return
 	}
 
 	// Validate request using struct tags
 	if err := h.validateStruct(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Registration validation failed")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Validation failed", err, requestID)
+		h.errorMapper.MapError(c, err, "register_validation", requestID)
 		return
 	}
 
 	// Call service layer for registration
 	user, err := h.authService.Register(c.Request.Context(), &req, clientIP, userAgent)
 	if err != nil {
-		h.handleServiceError(c, err, "registration", requestID)
+		h.errorMapper.MapError(c, err, "user_registration", requestID)
 		return
 	}
 
@@ -257,21 +273,21 @@ func (h *AuthHandler) Login(c *gin.Context) {
 	var req domain.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Invalid login request body")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Invalid request format", err, requestID)
+		h.errorMapper.MapError(c, err, "login_request_parsing", requestID)
 		return
 	}
 
 	// Validate request using struct tags
 	if err := h.validateStruct(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Login validation failed")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Validation failed", err, requestID)
+		h.errorMapper.MapError(c, err, "login_validation", requestID)
 		return
 	}
 
 	// Call service layer for authentication
 	authResponse, err := h.authService.Login(c.Request.Context(), &req, clientIP, userAgent)
 	if err != nil {
-		h.handleServiceError(c, err, "login", requestID)
+		h.errorMapper.MapError(c, err, "user_authentication", requestID)
 		return
 	}
 
@@ -345,14 +361,14 @@ func (h *AuthHandler) Logout(c *gin.Context) {
 	userID, err := h.getUserIDFromContext(c)
 	if err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
-		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid or missing authentication token", err, requestID)
+		h.errorMapper.MapError(c, err, "logout_authentication", requestID)
 		return
 	}
 
 	// Call service layer for logout (revoke all refresh tokens for user)
 	err = h.authService.LogoutAll(c.Request.Context(), userID, clientIP, userAgent)
 	if err != nil {
-		h.handleServiceError(c, err, "logout", requestID)
+		h.errorMapper.MapError(c, err, "user_logout", requestID)
 		return
 	}
 
@@ -445,21 +461,21 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	var req domain.RefreshTokenRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Invalid refresh token request body")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Invalid request format", err, requestID)
+		h.errorMapper.MapError(c, err, "refresh_token_request_parsing", requestID)
 		return
 	}
 
 	// Validate request using struct tags
 	if err := h.validateStruct(&req); err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Warn("Refresh token validation failed")
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", "Validation failed", err, requestID)
+		h.errorMapper.MapError(c, err, "refresh_token_validation", requestID)
 		return
 	}
 
 	// Call service layer for token refresh
 	authResponse, err := h.authService.RefreshToken(c.Request.Context(), &req, clientIP, userAgent)
 	if err != nil {
-		h.handleServiceError(c, err, "refresh_token", requestID)
+		h.errorMapper.MapError(c, err, "token_refresh", requestID)
 		return
 	}
 
@@ -470,271 +486,6 @@ func (h *AuthHandler) RefreshToken(c *gin.Context) {
 	}).Info("Token refreshed successfully")
 
 	c.JSON(http.StatusOK, authResponse)
-}
-
-// UpdateProfile godoc
-//
-// @Summary      Update user profile
-// @Description  Updates the authenticated user's profile information. Supports partial updates.
-// @Description  Only provided fields will be updated. Email changes trigger re-verification.
-// @Description  All updates are logged for audit purposes.
-// @Tags         authentication
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Param        profile  body      domain.UpdateProfileRequest  true  "Profile update data"
-// @Success      200      {object}  domain.UserResponse         "Profile updated successfully"
-// @Failure      400      {object}  domain.ErrorResponse        "Invalid input data"
-// @Failure      401      {object}  domain.ErrorResponse        "Unauthorized - invalid or missing token"
-// @Failure      409      {object}  domain.ErrorResponse        "Email already exists"
-// @Failure      500      {object}  domain.ErrorResponse        "Internal server error"
-// @Router       /auth/me [put]
-func (h *AuthHandler) UpdateProfile(c *gin.Context) {
-	// Generate request ID for logging and tracking
-	requestID := h.getRequestID(c)
-	h.logger.WithField("request_id", requestID).Info("Profile update request received")
-
-	// Extract user ID from JWT token (set by auth middleware)
-	userID, err := h.getUserIDFromContext(c)
-	if err != nil {
-		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
-		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid authentication token", err, requestID)
-		return
-	}
-
-	// Parse and validate request body
-	var req domain.UpdateProfileRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to parse request body")
-		h.errorResponse(c, http.StatusBadRequest, "invalid_input", "Failed to parse request body: "+err.Error(), err, requestID)
-		return
-	}
-
-	// Validate request using struct tags
-	if err := h.validateStruct(&req); err != nil {
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", err.Error(), err, requestID)
-		return
-	}
-
-	// Check if at least one field is provided for update
-	if req.Email == nil && req.FirstName == nil && req.LastName == nil {
-		h.errorResponse(c, http.StatusBadRequest, "invalid_input", "At least one field must be provided for update", nil, requestID)
-		return
-	}
-
-	// Get current user details
-	existingUser, err := h.authService.GetUserByID(c.Request.Context(), userID.String())
-	if err != nil {
-		if err == domain.ErrUserNotFound {
-			h.logger.WithError(err).WithField("request_id", requestID).WithField("user_id", userID).Error("User not found")
-			h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "User not found", err, requestID)
-			return
-		}
-		h.logger.WithError(err).WithField("request_id", requestID).WithField("user_id", userID).Error("Failed to retrieve user details")
-		h.errorResponse(c, http.StatusInternalServerError, "internal_error", "Failed to retrieve user details", err, requestID)
-		return
-	}
-
-	// If email is being updated, check for uniqueness
-	if req.Email != nil && *req.Email != existingUser.Email {
-		_, err := h.authService.GetUserByEmail(c.Request.Context(), *req.Email)
-		if err == nil {
-			// Email already exists
-			h.logger.WithField("request_id", requestID).WithField("email", *req.Email).Warn("Email already in use")
-			h.errorResponse(c, http.StatusConflict, "email_conflict", "Email address is already in use", nil, requestID)
-			return
-		}
-		if err != domain.ErrUserNotFound {
-			// Database error
-			h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to validate email uniqueness")
-			h.errorResponse(c, http.StatusInternalServerError, "internal_error", "Failed to validate email uniqueness", err, requestID)
-			return
-		}
-	}
-
-	// Prepare update data - only include fields that are provided
-	updateData := make(map[string]interface{})
-	changedFields := []string{}
-
-	if req.Email != nil && *req.Email != existingUser.Email {
-		updateData["email"] = *req.Email
-		updateData["is_email_verified"] = false // Email changes require re-verification
-		changedFields = append(changedFields, "email")
-	}
-
-	if req.FirstName != nil && *req.FirstName != existingUser.FirstName {
-		updateData["first_name"] = *req.FirstName
-		changedFields = append(changedFields, "first_name")
-	}
-
-	if req.LastName != nil && *req.LastName != existingUser.LastName {
-		updateData["last_name"] = *req.LastName
-		changedFields = append(changedFields, "last_name")
-	}
-
-	// If no actual changes detected, return current user data
-	if len(changedFields) == 0 {
-		h.logger.WithField("request_id", requestID).WithField("user_id", userID).Info("No changes detected, returning current user data")
-		response := domain.UserResponse{
-			ID:              existingUser.ID,
-			Email:           existingUser.Email,
-			FirstName:       existingUser.FirstName,
-			LastName:        existingUser.LastName,
-			FullName:        existingUser.GetFullName(),
-			IsEmailVerified: existingUser.IsEmailVerified,
-			IsActive:        existingUser.IsActive,
-			LastLoginAt:     existingUser.LastLoginAt,
-			CreatedAt:       existingUser.CreatedAt,
-			UpdatedAt:       existingUser.UpdatedAt,
-		}
-		c.JSON(http.StatusOK, response)
-		return
-	}
-
-	// Update timestamp
-	updateData["updated_at"] = time.Now()
-
-	// Perform the update
-	err = h.authService.UpdateProfile(c.Request.Context(), userID.String(), updateData)
-	if err != nil {
-		if err == domain.ErrEmailExists {
-			h.errorResponse(c, http.StatusConflict, "email_conflict", "Email address is already in use", err, requestID)
-			return
-		}
-		h.logger.WithError(err).WithField("request_id", requestID).WithField("user_id", userID).Error("Failed to update user profile")
-		h.errorResponse(c, http.StatusInternalServerError, "internal_error", "Failed to update user profile", err, requestID)
-		return
-	}
-
-	// Get updated user data
-	updatedUser, err := h.authService.GetUserByID(c.Request.Context(), userID.String())
-	if err != nil {
-		h.logger.WithError(err).WithField("request_id", requestID).WithField("user_id", userID).Error("Failed to retrieve updated user details")
-		h.errorResponse(c, http.StatusInternalServerError, "internal_error", "Failed to retrieve updated user details", err, requestID)
-		return
-	}
-
-	// Log the profile update for audit purposes
-	clientIP := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-
-	auditLog := &domain.AuditLog{
-		UserID:           &userID,
-		EventType:        "profile_update",
-		EventDescription: fmt.Sprintf("Updated fields: %s", strings.Join(changedFields, ", ")),
-		IPAddress:        clientIP,
-		UserAgent:        userAgent,
-		Success:          true,
-		CreatedAt:        time.Now(),
-	}
-
-	// Log audit event (non-blocking - don't fail request if audit logging fails)
-	if err := h.authService.LogAuditEvent(c.Request.Context(), auditLog); err != nil {
-		// Log error but don't fail the request
-		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to create audit log")
-	}
-
-	// Return updated user data
-	response := domain.UserResponse{
-		ID:              updatedUser.ID,
-		Email:           updatedUser.Email,
-		FirstName:       updatedUser.FirstName,
-		LastName:        updatedUser.LastName,
-		FullName:        updatedUser.GetFullName(),
-		IsEmailVerified: updatedUser.IsEmailVerified,
-		IsActive:        updatedUser.IsActive,
-		LastLoginAt:     updatedUser.LastLoginAt,
-		CreatedAt:       updatedUser.CreatedAt,
-		UpdatedAt:       updatedUser.UpdatedAt,
-	}
-
-	h.logger.WithField("request_id", requestID).WithField("user_id", userID).WithField("changed_fields", changedFields).Info("Profile updated successfully")
-	c.JSON(http.StatusOK, response)
-}
-
-// Me retrieves the current user's profile information.
-// This endpoint returns the authenticated user's profile data excluding sensitive information.
-//
-// @Summary      Get current user profile
-// @Description  Retrieve the authenticated user's profile information
-// @Tags         user
-// @Accept       json
-// @Produce      json
-// @Security     BearerAuth
-// @Success      200  {object}  domain.User "User profile data"
-// @Failure      401  {object}  domain.ErrorResponse "Unauthorized - invalid or missing token"
-// @Failure      404  {object}  domain.ErrorResponse "User not found"
-// @Failure      500  {object}  domain.ErrorResponse "Internal server error"
-// @Router       /auth/me [get]
-//
-// HTTP Method: GET
-// Path: /api/v1/auth/me
-// Headers: Authorization: Bearer <access_token>
-//
-// Success Response (200 OK):
-//
-//	{
-//	  "id": "123e4567-e89b-12d3-a456-426614174000",
-//	  "email": "user@example.com",
-//	  "first_name": "John",
-//	  "last_name": "Doe",
-//	  "created_at": "2023-01-15T10:30:00Z",
-//	  "updated_at": "2023-01-15T10:30:00Z",
-//	  "is_active": true
-//	}
-//
-// Security considerations:
-// - Requires valid JWT access token
-// - Password hash is excluded from response
-// - User ID is validated before lookup
-// - Access is logged for audit purposes
-func (h *AuthHandler) Me(c *gin.Context) {
-	// Generate request ID for tracking
-	requestID := h.getRequestID(c)
-	clientIP := c.ClientIP()
-	userAgent := c.GetHeader("User-Agent")
-
-	h.logger.WithFields(logrus.Fields{
-		"operation":  "get_profile",
-		"request_id": requestID,
-		"client_ip":  clientIP,
-		"user_agent": userAgent,
-	}).Info("Get user profile request received")
-
-	// Get user ID from JWT token in Authorization header (set by auth middleware)
-	userID, err := h.getUserIDFromContext(c)
-	if err != nil {
-		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
-		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid or missing authentication token", err, requestID)
-		return
-	}
-
-	// Get user profile from service
-	user, err := h.authService.GetUserByID(c.Request.Context(), userID.String())
-	if err != nil {
-		h.handleServiceError(c, err, "get_profile", requestID)
-		return
-	}
-
-	// Prepare success response (exclude sensitive fields)
-	response := map[string]interface{}{
-		"id":         user.ID,
-		"email":      user.Email,
-		"first_name": user.FirstName,
-		"last_name":  user.LastName,
-		"created_at": user.CreatedAt,
-		"updated_at": user.UpdatedAt,
-		"is_active":  user.IsActive,
-		"request_id": requestID,
-		"timestamp":  time.Now().UTC(),
-	}
-
-	h.logger.WithFields(logrus.Fields{
-		"user_id":    userID,
-		"request_id": requestID,
-	}).Info("User profile retrieved successfully")
-
-	c.JSON(http.StatusOK, response)
 }
 
 // LogoutAll logs out the user from all devices by revoking all refresh tokens.
@@ -788,14 +539,14 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	userID, err := h.getUserIDFromContext(c)
 	if err != nil {
 		h.logger.WithError(err).WithField("request_id", requestID).Error("Failed to get user ID from context")
-		h.errorResponse(c, http.StatusUnauthorized, "unauthorized", "Invalid or missing authentication token", err, requestID)
+		h.errorMapper.MapError(c, err, "logout_all_authentication", requestID)
 		return
 	}
 
 	// Call service layer for logout-all (revoke all refresh tokens for user)
 	err = h.authService.LogoutAll(c.Request.Context(), userID, clientIP, userAgent)
 	if err != nil {
-		h.handleServiceError(c, err, "logout_all", requestID)
+		h.errorMapper.MapError(c, err, "logout_all_execution", requestID)
 		return
 	}
 
@@ -813,209 +564,4 @@ func (h *AuthHandler) LogoutAll(c *gin.Context) {
 	}).Info("User logged out from all devices successfully")
 
 	c.JSON(http.StatusOK, response)
-}
-
-// getRequestID extracts or generates a request correlation ID for tracing.
-func (h *AuthHandler) getRequestID(c *gin.Context) string {
-	// Try to get request ID from header first
-	if requestID := c.GetHeader("X-Request-ID"); requestID != "" {
-		return requestID
-	}
-
-	// Try to get from context
-	if requestID, exists := c.Get("request_id"); exists {
-		if id, ok := requestID.(string); ok {
-			return id
-		}
-	}
-
-	// Generate new request ID
-	return "req_" + uuid.New().String()
-}
-
-// validateStruct validates a struct using validator tags.
-// This function performs comprehensive validation of request DTOs
-// using the go-playground/validator library to ensure data integrity
-// before processing business logic.
-//
-// Validation features:
-// - Required field validation
-// - Format validation (email, etc.)
-// - Length constraints (min/max)
-// - Custom validation rules
-// - Field cross-validation (password confirmation)
-//
-// Parameters:
-//   - s: Interface containing the struct to validate
-//
-// Returns:
-//   - Error with detailed validation messages if validation fails
-//   - nil if validation passes
-//
-// Example validation tags supported:
-//   - required: Field must not be empty
-//   - email: Must be valid email format
-//   - min=8: Minimum length of 8 characters
-//   - max=255: Maximum length of 255 characters
-//   - eqfield=Password: Must equal the Password field
-func (h *AuthHandler) validateStruct(s interface{}) error {
-	// For now, implement basic validation manually
-	// TODO: Integrate go-playground/validator for comprehensive validation
-
-	switch v := s.(type) {
-	case *domain.RegisterRequest:
-		if v.Email == "" {
-			return fmt.Errorf("email is required")
-		}
-		if v.Password == "" {
-			return fmt.Errorf("password is required")
-		}
-		if len(v.Password) < 8 {
-			return fmt.Errorf("password must be at least 8 characters")
-		}
-		if v.PasswordConfirm == "" {
-			return fmt.Errorf("password_confirm is required")
-		}
-		if v.Password != v.PasswordConfirm {
-			return fmt.Errorf("password and password_confirm must match")
-		}
-		if v.FirstName == "" {
-			return fmt.Errorf("first_name is required")
-		}
-		if len(v.FirstName) > 100 {
-			return fmt.Errorf("first_name must be no more than 100 characters")
-		}
-		if v.LastName == "" {
-			return fmt.Errorf("last_name is required")
-		}
-		if len(v.LastName) > 100 {
-			return fmt.Errorf("last_name must be no more than 100 characters")
-		}
-		// Basic email format check
-		if !strings.Contains(v.Email, "@") || !strings.Contains(v.Email, ".") {
-			return fmt.Errorf("email must be a valid email address")
-		}
-		if len(v.Email) > 255 {
-			return fmt.Errorf("email must be no more than 255 characters")
-		}
-
-	case *domain.LoginRequest:
-		if v.Email == "" {
-			return fmt.Errorf("email is required")
-		}
-		if v.Password == "" {
-			return fmt.Errorf("password is required")
-		}
-		// Basic email format check
-		if !strings.Contains(v.Email, "@") || !strings.Contains(v.Email, ".") {
-			return fmt.Errorf("email must be a valid email address")
-		}
-
-	case *domain.ResetPasswordRequest:
-		if v.Email == "" {
-			return fmt.Errorf("email is required")
-		}
-		// Basic email format check
-		if !strings.Contains(v.Email, "@") || !strings.Contains(v.Email, ".") {
-			return fmt.Errorf("email must be a valid email address")
-		}
-
-	case *domain.ConfirmResetPasswordRequest:
-		if v.Token == "" {
-			return fmt.Errorf("token is required")
-		}
-		if v.Email == "" {
-			return fmt.Errorf("email is required")
-		}
-		if v.NewPassword == "" {
-			return fmt.Errorf("new_password is required")
-		}
-		if len(v.NewPassword) < 8 {
-			return fmt.Errorf("new_password must be at least 8 characters")
-		}
-		if v.NewPasswordConfirm == "" {
-			return fmt.Errorf("new_password_confirm is required")
-		}
-		if v.NewPassword != v.NewPasswordConfirm {
-			return fmt.Errorf("new_password and new_password_confirm must match")
-		}
-	}
-
-	return nil
-}
-
-// errorResponse sends a standardized error response
-func (h *AuthHandler) errorResponse(c *gin.Context, status int, errorType, message string, err error, requestID string) {
-	response := domain.ErrorResponse{
-		Error:     errorType,
-		Message:   message,
-		RequestID: requestID,
-		Timestamp: time.Now(),
-	}
-
-	// Add validation details if available
-	if err != nil && status == http.StatusBadRequest {
-		response.Details = err.Error()
-	}
-
-	c.JSON(status, response)
-}
-
-// handleServiceError maps service layer errors to appropriate HTTP responses
-func (h *AuthHandler) handleServiceError(c *gin.Context, err error, operation, requestID string) {
-	h.logger.WithError(err).WithFields(logrus.Fields{
-		"operation":  operation,
-		"request_id": requestID,
-	}).Error("Service error occurred")
-
-	// Map domain errors to HTTP status codes
-	switch {
-	case domain.IsAuthenticationError(err):
-		h.errorResponse(c, http.StatusUnauthorized, "authentication_error", "Authentication failed", err, requestID)
-	case domain.IsValidationError(err):
-		h.errorResponse(c, http.StatusBadRequest, "validation_error", err.Error(), err, requestID)
-	case domain.IsRateLimitError(err):
-		h.errorResponse(c, http.StatusTooManyRequests, "rate_limit_error", "Too many requests", err, requestID)
-	case domain.IsInfrastructureError(err):
-		h.errorResponse(c, http.StatusServiceUnavailable, "service_unavailable", "Service temporarily unavailable", err, requestID)
-	default:
-		h.errorResponse(c, http.StatusInternalServerError, "internal_error", "Internal server error", err, requestID)
-	}
-}
-
-// getUserIDFromContext extracts the user ID from the Gin context.
-// This function retrieves the user ID that was set by the authentication middleware
-// after validating the JWT token in the Authorization header.
-//
-// The user ID can be stored in different formats in the context:
-// - As a uuid.UUID type directly
-// - As a string that needs to be parsed into UUID
-//
-// Parameters:
-//   - c: Gin context containing the request and middleware data
-//
-// Returns:
-//   - User UUID if found in context
-//   - Error if user ID is missing or invalid format
-//
-// Security considerations:
-// - Only works after authentication middleware has validated the JWT
-// - Returns error if no valid user session is found
-// - Ensures user ID format consistency across the application
-func (h *AuthHandler) getUserIDFromContext(c *gin.Context) (uuid.UUID, error) {
-	// Try to get user ID from context (set by auth middleware)
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		return uuid.Nil, fmt.Errorf("user ID not found in context")
-	}
-
-	// Convert to UUID
-	switch v := userIDValue.(type) {
-	case uuid.UUID:
-		return v, nil
-	case string:
-		return uuid.Parse(v)
-	default:
-		return uuid.Nil, fmt.Errorf("invalid user ID format in context")
-	}
 }

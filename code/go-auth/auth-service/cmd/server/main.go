@@ -392,8 +392,8 @@ func initializeDatabase(cfg *config.Config, logger *logrus.Logger) (*sql.DB, err
 	logger.WithFields(logrus.Fields{
 		"host":     cfg.Database.Host,
 		"port":     cfg.Database.Port,
-		"database": cfg.Database.Name,
-		"user":     cfg.Database.User,
+		"database": cfg.Database.Database,
+		"user":     cfg.Database.Username,
 	}).Info("Connecting to PostgreSQL database")
 
 	// Open database connection
