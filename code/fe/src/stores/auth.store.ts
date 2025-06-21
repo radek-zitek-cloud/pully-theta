@@ -1,0 +1,526 @@
+/**
+ * Authentication Store
+ * 
+ * Pinia store for managing authentication state and operations.
+ * Handles user login/logout, token management, and authentication status.
+ * Includes persistence for maintaining authentication across browser sessions.
+ * 
+ * Features:
+ * - JWT token management with automatic refresh
+ * - User profile management
+ * - Authentication status tracking
+ * - Secure token storage with localStorage persistence
+ * - Comprehensive error handling and validation
+ * 
+ * @author Frontend Team
+ * @version 1.0.0
+ */
+
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { authService } from '@/services'
+import { useUIStore } from './ui.store'
+import type { 
+  UserResponse, 
+  LoginRequest, 
+  RegisterRequest,
+  UpdateProfileRequest
+} from '@/types'
+
+/**
+ * Authentication store using Composition API syntax
+ * 
+ * This store manages all authentication-related state and operations.
+ * It provides reactive state for user authentication status, user profile,
+ * and JWT tokens, along with methods for login, logout, and profile management.
+ * 
+ * The store automatically persists critical authentication data to localStorage
+ * and provides methods for token refresh and validation.
+ */
+export const useAuthStore = defineStore('auth', () => {
+  // Get UI store for notifications
+  const uiStore = useUIStore()
+
+  // ===== STATE =====
+  
+  /**
+   * Current authenticated user profile
+   * @type {Ref<UserResponse | null>}
+   */
+  const user = ref<UserResponse | null>(null)
+  
+  /**
+   * JWT access token for API authentication
+   * @type {Ref<string | null>}
+   */
+  const accessToken = ref<string | null>(null)
+  
+  /**
+   * JWT refresh token for obtaining new access tokens
+   * @type {Ref<string | null>}
+   */
+  const refreshToken = ref<string | null>(null)
+  
+  /**
+   * Token expiration timestamp in milliseconds
+   * @type {Ref<number | null>}
+   */
+  const tokenExpiresAt = ref<number | null>(null)
+  
+  /**
+   * Loading state for authentication operations
+   * @type {Ref<boolean>}
+   */
+  const isLoading = ref<boolean>(false)
+  
+  /**
+   * Remember me preference for extended sessions
+   * @type {Ref<boolean>}
+   */
+  const rememberMe = ref<boolean>(false)
+  
+  /**
+   * Last login timestamp
+   * @type {Ref<string | null>}
+   */
+  const lastLogin = ref<string | null>(null)
+
+  // ===== COMPUTED PROPERTIES (GETTERS) =====
+  
+  /**
+   * Reactive authentication status
+   * 
+   * User is considered authenticated if they have:
+   * - A valid access token
+   * - A user profile loaded
+   * - Token is not expired
+   * 
+   * @returns {boolean} True if user is authenticated
+   */
+  const isAuthenticated = computed(() => {
+    return !!(accessToken.value && user.value && !isTokenExpired.value)
+  })
+
+  /**
+   * Check if current token is expired
+   * 
+   * @returns {boolean} True if token is expired or expiration time is not set
+   */
+  const isTokenExpired = computed(() => {
+    if (!tokenExpiresAt.value) return true
+    return Date.now() >= tokenExpiresAt.value
+  })
+
+  /**
+   * User's full display name
+   * 
+   * @returns {string} Full name or concatenated first/last name
+   */
+  const userFullName = computed(() => {
+    if (!user.value) return ''
+    return user.value.full_name || `${user.value.first_name} ${user.value.last_name}`
+  })
+
+  /**
+   * User's initials for display purposes
+   * 
+   * @returns {string} First letter of first and last name, uppercase
+   */
+  const userInitials = computed(() => {
+    if (!user.value) return ''
+    return `${user.value.first_name.charAt(0)}${user.value.last_name.charAt(0)}`.toUpperCase()
+  })
+
+  // ===== ACTIONS =====
+
+  /**
+   * Initialize authentication state from stored tokens
+   * 
+   * This method should be called on app startup to restore authentication
+   * state from localStorage if valid tokens exist. It will:
+   * 1. Check for stored tokens
+   * 2. Validate access token
+   * 3. Attempt token refresh if needed
+   * 4. Load user profile
+   * 
+   * @returns {Promise<boolean>} True if authentication was restored successfully
+   */
+  async function initialize(): Promise<boolean> {
+    try {
+      isLoading.value = true
+      
+      const storedAccessToken = authService.getStoredAccessToken()
+      const storedRefreshToken = authService.getStoredRefreshToken()
+      
+      if (!storedAccessToken || !storedRefreshToken) {
+        return false
+      }
+
+      // Check if access token is still valid
+      if (authService.isAuthenticated()) {
+        accessToken.value = storedAccessToken
+        refreshToken.value = storedRefreshToken
+        
+        // Get current user info
+        const currentUser = await authService.getCurrentUser()
+        user.value = currentUser
+        lastLogin.value = currentUser.last_login_at || null
+        
+        return true
+      }
+
+      // Try to refresh the token
+      if (storedRefreshToken) {
+        const response = await authService.refreshToken({ 
+          refresh_token: storedRefreshToken 
+        })
+        
+        await setAuthenticationData(response)
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error('Failed to initialize auth state:', error)
+      await logout()
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Register a new user account
+   * 
+   * @param {RegisterRequest} credentials - User registration data
+   * @returns {Promise<any>} Registration response
+   * @throws {Error} When registration fails
+   */
+  async function register(credentials: RegisterRequest) {
+    try {
+      isLoading.value = true
+      const response = await authService.register(credentials)
+      
+      // Registration successful, but user needs to login
+      uiStore.showSuccess('Registration successful! Please log in with your credentials.')
+      return response
+    } catch (error) {
+      console.error('Registration failed:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Authenticate user with email and password
+   * 
+   * @param {LoginRequest} credentials - User login credentials
+   * @returns {Promise<any>} Login response
+   * @throws {Error} When login fails
+   */
+  async function login(credentials: LoginRequest) {
+    try {
+      isLoading.value = true
+      rememberMe.value = credentials.remember_me || false
+      
+      const response = await authService.login(credentials)
+      await setAuthenticationData(response)
+      
+      uiStore.showSuccess(`Welcome back, ${userFullName.value}!`)
+      return response
+    } catch (error) {
+      console.error('Login failed:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Log out the current user
+   * 
+   * This method:
+   * 1. Makes a logout request to the backend (if authenticated)
+   * 2. Clears all authentication data
+   * 3. Shows appropriate notification
+   * 4. Handles errors gracefully
+   * 
+   * @param {boolean} logoutFromAllDevices - Whether to logout from all devices
+   * @returns {Promise<void>}
+   */
+  async function logout(logoutFromAllDevices = false): Promise<void> {
+    try {
+      isLoading.value = true
+      
+      // Attempt to notify the backend about logout
+      // This is not critical - we'll clear local data regardless
+      if (isAuthenticated.value) {
+        try {
+          if (logoutFromAllDevices) {
+            await authService.logoutAll()
+          } else {
+            await authService.logout()
+          }
+        } catch (error) {
+          // Log error but don't prevent logout
+          console.warn('Logout request failed:', error)
+        }
+      }
+      
+      // Clear authentication data
+      clearAuthenticationData()
+      
+      // Show success notification
+      uiStore.showSuccess('Logged out successfully')
+      
+    } catch (error) {
+      console.error('Logout error:', error)
+      
+      // Still clear local data even on error
+      clearAuthenticationData()
+      
+      // Show warning instead of error
+      uiStore.showWarning('Logged out locally (server notification failed)')
+      
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Refresh the access token using refresh token
+   * 
+   * @returns {Promise<any>} New login response with fresh tokens
+   * @throws {Error} When refresh fails
+   */
+  async function refreshAccessToken() {
+    if (!refreshToken.value) {
+      throw new Error('No refresh token available')
+    }
+
+    try {
+      const response = await authService.refreshToken({
+        refresh_token: refreshToken.value
+      })
+      
+      await setAuthenticationData(response)
+      return response
+    } catch (error) {
+      // If refresh fails, logout user
+      await logout()
+      throw error
+    }
+  }
+
+  /**
+   * Get current user profile information
+   * 
+   * @returns {Promise<UserResponse>} Current user data
+   * @throws {Error} When fetching user fails
+   */
+  async function fetchCurrentUser(): Promise<UserResponse> {
+    try {
+      isLoading.value = true
+      const currentUser = await authService.getCurrentUser()
+      user.value = currentUser
+      return currentUser
+    } catch (error) {
+      console.error('Failed to fetch current user:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Update user profile information
+   * 
+   * @param {UpdateProfileRequest} profileData - Profile update data
+   * @returns {Promise<UserResponse>} Updated user data
+   * @throws {Error} When profile update fails
+   */
+  async function updateProfile(profileData: UpdateProfileRequest): Promise<UserResponse> {
+    try {
+      isLoading.value = true
+      const updatedUser = await authService.updateProfile(profileData)
+      user.value = updatedUser
+      
+      uiStore.showSuccess('Profile updated successfully')
+      return updatedUser
+    } catch (error) {
+      console.error('Failed to update profile:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Change user password
+   * 
+   * This method allows authenticated users to change their password.
+   * It requires the current password for security verification.
+   * 
+   * @param {Object} passwordData - Password change data
+   * @param {string} passwordData.currentPassword - Current user password
+   * @param {string} passwordData.newPassword - New password
+   * @param {string} passwordData.confirmPassword - Password confirmation
+   * @returns {Promise<void>} Promise that resolves when password is successfully changed
+   * @throws {Error} When password change fails or validation errors occur
+   * 
+   * @example
+   * ```typescript
+   * await authStore.changePassword({
+   *   currentPassword: 'oldPassword123',
+   *   newPassword: 'newPassword456',
+   *   confirmPassword: 'newPassword456'
+   * })
+   * ```
+   */
+  async function changePassword(passwordData: {
+    currentPassword: string
+    newPassword: string
+    confirmPassword: string
+  }): Promise<void> {
+    try {
+      isLoading.value = true
+      
+      // Client-side validation
+      if (!passwordData.currentPassword) {
+        throw new Error('Current password is required')
+      }
+      
+      if (!passwordData.newPassword) {
+        throw new Error('New password is required')
+      }
+      
+      if (passwordData.newPassword !== passwordData.confirmPassword) {
+        throw new Error('New password and confirmation do not match')
+      }
+      
+      if (passwordData.newPassword === passwordData.currentPassword) {
+        throw new Error('New password must be different from current password')
+      }
+      
+      // Call the auth service to change password
+      await authService.changePassword(passwordData)
+      
+      // Show success notification
+      uiStore.showSuccess('Password changed successfully')
+      
+    } catch (error) {
+      console.error('Failed to change password:', error)
+      throw error
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  // ===== HELPER METHODS =====
+
+  /**
+   * Set authentication data from login/refresh response
+   * 
+   * @param {any} response - Login or refresh token response
+   * @private
+   */
+  async function setAuthenticationData(response: any): Promise<void> {
+    accessToken.value = response.access_token
+    refreshToken.value = response.refresh_token
+    user.value = response.user
+    lastLogin.value = response.timestamp
+    
+    // Calculate token expiration time
+    const expiresInMs = response.expires_in * 1000
+    tokenExpiresAt.value = Date.now() + expiresInMs
+  }
+
+  /**
+   * Clear all authentication data
+   * 
+   * Clears in-memory authentication state.
+   * Note: Token clearing from localStorage is handled by the auth service
+   * during logout operations.
+   * 
+   * @private
+   */
+  function clearAuthenticationData(): void {
+    user.value = null
+    accessToken.value = null
+    refreshToken.value = null
+    tokenExpiresAt.value = null
+    rememberMe.value = false
+    lastLogin.value = null
+  }
+
+  /**
+   * Check if current user has specific role
+   * 
+   * @param {string} role - Role to check
+   * @returns {boolean} Boolean indicating if user has the role
+   * @todo Implement role-based authentication when backend supports it
+   */
+  function hasRole(role: string): boolean {
+    // TODO: Implement role-based authentication when backend supports it
+    console.warn('Role-based authentication not yet implemented:', role)
+    return false
+  }
+
+  /**
+   * Check if current user has any of the specified roles
+   * 
+   * @param {string[]} roles - Array of roles to check
+   * @returns {boolean} Boolean indicating if user has any of the roles
+   * @todo Implement role-based authentication when backend supports it
+   */
+  function hasAnyRole(roles: string[]): boolean {
+    return roles.some(role => hasRole(role))
+  }
+
+  // ===== RETURN STORE INTERFACE =====
+  
+  return {
+    // State
+    user,
+    accessToken,
+    refreshToken,
+    tokenExpiresAt,
+    isLoading,
+    rememberMe,
+    lastLogin,
+    
+    // Getters (computed properties)
+    isAuthenticated,
+    isTokenExpired,
+    userFullName,
+    userInitials,
+    
+    // Actions
+    initialize,
+    register,
+    login,
+    logout,
+    refreshAccessToken,
+    fetchCurrentUser,
+    updateProfile,
+    changePassword,
+    hasRole,
+    hasAnyRole
+  }
+}, {
+  // Pinia persistence configuration
+  persist: {
+    key: 'auth-store',
+    storage: localStorage,
+    paths: ['user', 'accessToken', 'refreshToken', 'tokenExpiresAt', 'rememberMe', 'lastLogin']
+  }
+})
+
+/**
+ * Type definitions for the auth store
+ * 
+ * This provides TypeScript support for the store's return type
+ * and ensures type safety when using the store in components.
+ */
+export type AuthStore = ReturnType<typeof useAuthStore>

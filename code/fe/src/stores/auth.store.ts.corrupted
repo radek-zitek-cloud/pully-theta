@@ -1,0 +1,426 @@
+/**
+ * Authentication Store
+ * 
+ * Pinia store for managing authentication state and operations.
+ * Handles user login/logout, token management, and authentication status.
+ * Includes persistence for maintaining log  /**
+   * Update user profile information
+   * 
+   * @param profileData - Updated profile data
+   * @returns Promise resolving to updated user data
+   */
+  async function updateProfile(profileData: UpdateProfileRequest) {
+    try {
+      isLoading.value = true
+      const updatedUser = await authService.updateProfile(profileData)
+      user.value = updatedUser
+      return updatedUser
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Change user password
+   * 
+   * Updates the user's password by verifying the current password
+   * and setting a new one. For security, this method forces logout
+   * after successful password change to require re-authentication.
+   * 
+   * @param passwordData - Current and new password information
+   * @throws {Error} When password change fails or validation errors occur
+   * @returns Promise that resolves when password is successfully changed
+   */
+  async function changePassword(passwordData: {
+    currentPassword: string
+    newPassword: string
+    confirmPassword: string
+  }) {
+    try {
+      isLoading.value = true
+      
+      // Validate inputs client-side first
+      if (!passwordData.currentPassword) {
+        throw new Error('Current password is required')
+      }
+      
+      if (!passwordData.newPassword) {
+        throw new Error('New password is required')
+      }
+      
+      if (passwordData.newPassword !== passwordData.confirmPassword) {
+        throw new Error('New password and confirmation do not match')
+      }
+      
+      if (passwordData.newPassword === passwordData.currentPassword) {
+        throw new Error('New password must be different from current password')
+      }
+
+      // Call API to change password
+      await authService.changePassword({
+        currentPassword: passwordData.currentPassword,
+        newPassword: passwordData.newPassword,
+        confirmPassword: passwordData.confirmPassword
+      })
+
+      // For security, logout user after password change to force re-authentication
+      await logout()
+      
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Set authentication data from login/refresh response
+   * 
+   * @param response - Login or refresh token response
+   */
+
+import { defineStore } from 'pinia'
+import { ref, computed } from 'vue'
+import { authService } from '@/services'
+import type { 
+  UserResponse, 
+  LoginRequest, 
+  RegisterRequest,
+  UpdateProfileRequest
+} from '@/types'
+
+/**
+ * Authentication store using Composition API syntax
+ * 
+ * Features:
+ * - User authentication state management
+ * - JWT token storage and validation
+ * - Automatic token refresh
+ * - Remember me functionality
+ * - Profile management
+ * - Persistent state across browser sessions
+ */
+export const useAuthStore = defineStore('auth', () => {
+  // State
+  const user = ref<UserResponse | null>(null)
+  const accessToken = ref<string | null>(null)
+  const refreshToken = ref<string | null>(null)
+  const tokenExpiresAt = ref<number | null>(null)
+  const isLoading = ref(false)
+  const rememberMe = ref(false)
+  const lastLogin = ref<string | null>(null)
+
+  // Getters (computed properties)
+  const isAuthenticated = computed(() => {
+    return !!(accessToken.value && user.value && !isTokenExpired.value)
+  })
+
+  const isTokenExpired = computed(() => {
+    if (!tokenExpiresAt.value) return true
+    return Date.now() >= tokenExpiresAt.value
+  })
+
+  const userFullName = computed(() => {
+    if (!user.value) return ''
+    return user.value.full_name || `${user.value.first_name} ${user.value.last_name}`
+  })
+
+  const userInitials = computed(() => {
+    if (!user.value) return ''
+    return `${user.value.first_name.charAt(0)}${user.value.last_name.charAt(0)}`.toUpperCase()
+  })
+
+  // Actions
+
+  /**
+   * Initialize authentication state from stored tokens
+   * 
+   * This should be called on app startup to restore authentication
+   * state from localStorage if tokens exist and are valid.
+   * 
+   * @returns Promise resolving to boolean indicating if user was restored
+   */
+  async function initialize(): Promise<boolean> {
+    try {
+      isLoading.value = true
+      
+      const storedAccessToken = authService.getStoredAccessToken()
+      const storedRefreshToken = authService.getStoredRefreshToken()
+      
+      if (!storedAccessToken || !storedRefreshToken) {
+        return false
+      }
+
+      // Check if access token is still valid
+      if (authService.isAuthenticated()) {
+        accessToken.value = storedAccessToken
+        refreshToken.value = storedRefreshToken
+        
+        // Get current user info
+        const currentUser = await authService.getCurrentUser()
+        user.value = currentUser
+        lastLogin.value = currentUser.last_login_at || null
+        
+        return true
+      }
+
+      // Try to refresh the token
+      if (storedRefreshToken) {
+        const response = await authService.refreshToken({ 
+          refresh_token: storedRefreshToken 
+        })
+        
+        await setAuthenticationData(response)
+        return true
+      }
+
+      return false
+    } catch (error) {
+      console.error('Failed to initialize auth state:', error)
+      await logout()
+      return false
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Register a new user account
+   * 
+   * @param credentials - User registration data
+   * @returns Promise resolving to registration response
+   */
+  async function register(credentials: RegisterRequest) {
+    try {
+      isLoading.value = true
+      const response = await authService.register(credentials)
+      
+      // Registration successful, but user needs to login
+      return response
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Authenticate user with email and password
+   * 
+   * @param credentials - User login credentials
+   * @returns Promise resolving to login response
+   */
+  async function login(credentials: LoginRequest) {
+    try {
+      isLoading.value = true
+      rememberMe.value = credentials.remember_me || false
+      
+      const response = await authService.login(credentials)
+      await setAuthenticationData(response)
+      
+      return response
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Logout current user and clear authentication state
+   * 
+   * @param logoutFromAllDevices - Whether to logout from all devices
+   */
+  async function logout(logoutFromAllDevices = false) {
+    try {
+      isLoading.value = true
+      
+      if (isAuthenticated.value) {
+        if (logoutFromAllDevices) {
+          await authService.logoutAll()
+        } else {
+          await authService.logout()
+        }
+      }
+    } catch (error) {
+      console.error('Logout error:', error)
+      // Continue with local cleanup even if server request fails
+    } finally {
+      clearAuthenticationData()
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Refresh the access token using refresh token
+   * 
+   * @returns Promise resolving to new login response
+   */
+  async function refreshAccessToken() {
+    if (!refreshToken.value) {
+      throw new Error('No refresh token available')
+    }
+
+    try {
+      const response = await authService.refreshToken({
+        refresh_token: refreshToken.value
+      })
+      
+      await setAuthenticationData(response)
+      return response
+    } catch (error) {
+      await logout()
+      throw error
+    }
+  }
+
+  /**
+   * Get current user profile information
+   * 
+   * @returns Promise resolving to current user data
+   */
+  async function fetchCurrentUser() {
+    try {
+      isLoading.value = true
+      const currentUser = await authService.getCurrentUser()
+      user.value = currentUser
+      return currentUser
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Update user profile information
+   * 
+   * @param profileData - Profile update data
+   * @returns Promise resolving to updated user data
+   */
+  async function updateProfile(profileData: UpdateProfileRequest) {
+    try {
+      isLoading.value = true
+      const updatedUser = await authService.updateProfile(profileData)
+      user.value = updatedUser
+      return updatedUser
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Change user password
+   * 
+   * This method allows authenticated users to change their password.
+   * It requires the current password for security verification.
+   * 
+   * @param passwordData - Password change data
+   * @returns Promise that resolves when password is successfully changed
+   * @throws {Error} When password change fails
+   * 
+   * @example
+   * ```typescript
+   * await authStore.changePassword({
+   *   currentPassword: 'oldPassword123',
+   *   newPassword: 'newPassword456',
+   *   confirmPassword: 'newPassword456'
+   * })
+   * ```
+   */
+  async function changePassword(passwordData: {
+    currentPassword: string
+    newPassword: string
+    confirmPassword: string
+  }): Promise<void> {
+    try {
+      isLoading.value = true
+      
+      // Call the auth service to change password
+      await authService.changePassword(passwordData)
+      
+      // Password changed successfully - no need to update local state
+      // as this doesn't affect authentication tokens
+      
+    } finally {
+      isLoading.value = false
+    }
+  }
+
+  /**
+   * Set authentication data from login/refresh response
+   * 
+   * @param response - Login or refresh token response
+   */
+  async function setAuthenticationData(response: any) {
+    accessToken.value = response.access_token
+    refreshToken.value = response.refresh_token
+    user.value = response.user
+    lastLogin.value = response.timestamp
+    
+    // Calculate token expiration time
+    const expiresInMs = response.expires_in * 1000
+    tokenExpiresAt.value = Date.now() + expiresInMs
+  }
+
+  /**
+   * Clear all authentication data
+   */
+  function clearAuthenticationData() {
+    user.value = null
+    accessToken.value = null
+    refreshToken.value = null
+    tokenExpiresAt.value = null
+    rememberMe.value = false
+    lastLogin.value = null
+  }
+
+  /**
+   * Check if current user has specific role (placeholder for future role-based auth)
+   * 
+   * @param role - Role to check
+   * @returns Boolean indicating if user has the role
+   */
+  function hasRole(role: string): boolean {
+    // TODO: Implement role-based authentication when backend supports it
+    console.warn('Role-based authentication not yet implemented:', role)
+    return false
+  }
+
+  /**
+   * Check if current user has any of the specified roles
+   * 
+   * @param roles - Array of roles to check
+   * @returns Boolean indicating if user has any of the roles
+   */
+  function hasAnyRole(roles: string[]): boolean {
+    return roles.some(role => hasRole(role))
+  }
+
+  return {
+    // State
+    user,
+    accessToken,
+    refreshToken,
+    tokenExpiresAt,
+    isLoading,
+    rememberMe,
+    lastLogin,
+    
+    // Getters
+    isAuthenticated,
+    isTokenExpired,
+    userFullName,
+    userInitials,
+    
+    // Actions
+    initialize,
+    register,
+    login,
+    logout,
+    refreshAccessToken,
+    fetchCurrentUser,
+    updateProfile,
+    changePassword,
+    hasRole,
+    hasAnyRole
+  }
+}, {
+  persist: {
+    key: 'auth-store',
+    storage: localStorage,
+    paths: ['user', 'accessToken', 'refreshToken', 'tokenExpiresAt', 'rememberMe', 'lastLogin']
+  }
+})
