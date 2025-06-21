@@ -488,11 +488,41 @@ func (r *InMemoryRateLimitService) GetStats() map[string]interface{} {
 	r.resetMutex.RUnlock()
 
 	return map[string]interface{}{
+		"implementation":            "InMemoryRateLimitService",
+		"distributed":               false,
+		"persistent":                false,
 		"login_identifiers_tracked": loginIdentifiers,
 		"reset_emails_tracked":      resetEmails,
 		"login_window_minutes":      r.loginWindow.Minutes(),
 		"login_limit":               r.loginLimit,
 		"reset_window_minutes":      r.resetWindow.Minutes(),
 		"reset_limit":               r.resetLimit,
+		"features": []string{
+			"sliding_window",
+			"thread_safe",
+			"auto_cleanup",
+		},
 	}
+}
+
+// HealthCheck verifies that the in-memory rate limiting service is healthy.
+// For the in-memory implementation, this always returns nil as there are
+// no external dependencies to check.
+//
+// Parameters:
+//   - ctx: Context for cancellation (not used in this implementation)
+//
+// Returns:
+//   - error: Always nil for in-memory implementation
+//
+// Example:
+//
+//	err := service.HealthCheck(ctx)
+//	if err != nil {
+//	    log.Printf("Rate limiter health check failed: %v", err)
+//	}
+func (r *InMemoryRateLimitService) HealthCheck(ctx context.Context) error {
+	// In-memory implementation has no external dependencies
+	// Health check always passes
+	return nil
 }

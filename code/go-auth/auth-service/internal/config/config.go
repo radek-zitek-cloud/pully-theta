@@ -187,6 +187,10 @@ type SecurityConfig struct {
 	// RateLimitEnabled controls whether rate limiting is active
 	RateLimitEnabled bool `json:"rate_limit_enabled"`
 
+	// RateLimitType specifies the rate limiting implementation to use
+	// Options: "memory" (in-memory), "redis" (Redis-based, recommended for production)
+	RateLimitType string `json:"rate_limit_type"`
+
 	// RateLimitRequestsPerMinute is the maximum requests per minute per IP
 	RateLimitRequestsPerMinute int `json:"rate_limit_requests_per_minute"`
 
@@ -379,6 +383,7 @@ func Load() (*Config, error) {
 		Security: SecurityConfig{
 			BcryptCost:                 getIntOrDefault("BCRYPT_COST", 12),
 			RateLimitEnabled:           getBoolOrDefault("RATE_LIMIT_ENABLED", true),
+			RateLimitType:              getEnvOrDefault("RATE_LIMIT_TYPE", "memory"),
 			RateLimitRequestsPerMinute: getIntOrDefault("RATE_LIMIT_REQUESTS_PER_MINUTE", 60),
 			PasswordResetTokenExpiry:   getDurationOrDefault("PASSWORD_RESET_TOKEN_EXPIRY", 1*time.Hour),
 			MaxLoginAttempts:           getIntOrDefault("MAX_LOGIN_ATTEMPTS", 5),

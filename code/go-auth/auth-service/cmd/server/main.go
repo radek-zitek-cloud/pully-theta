@@ -12,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq" // PostgreSQL driver
+	"github.com/redis/go-redis/v9"
 	"github.com/sirupsen/logrus"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -183,8 +184,10 @@ func main() {
 	}
 
 	// Initialize rate limiting service
-	rateLimitConfig := service.DefaultRateLimitConfig()
-	rateLimitService := service.NewInMemoryRateLimitService(rateLimitConfig, logger)
+	rateLimitService, err := initializeRateLimitService(cfg, logger)
+	if err != nil {
+		logger.WithError(err).Fatal("Failed to initialize rate limiting service")
+	}
 
 	// Initialize metrics handler before auth service (needed for metrics recording)
 	metricsHandler, err := api.NewMetricsHandler(logger)
@@ -550,6 +553,84 @@ func requestLoggingMiddleware(logger *logrus.Logger) gin.HandlerFunc {
 			param.ErrorMessage,
 		)
 	})
+}
+
+// initializeRateLimitService creates the appropriate rate limiting service based on configuration.
+//
+// This function supports multiple rate limiting backends:
+// - "memory": In-memory rate limiting (suitable for single-instance deployments)
+// - "redis": Redis-based rate limiting (recommended for production and multi-instance deployments)
+//
+// Parameters:
+//   - cfg: Application configuration containing rate limiting and Redis settings
+//   - logger: Structured logger for debugging and monitoring
+//
+// Returns:
+//   - service.RateLimitService: Configured rate limiting service
+//   - error: Configuration or connection errors
+//
+// The Redis implementation provides:
+// - Persistent rate limiting state across service restarts
+// - Distributed coordination across multiple instances
+// - Sliding window algorithm for accurate rate limiting
+// - Automatic cleanup of expired entries
+//
+// Example configuration:
+//   - RATE_LIMIT_TYPE=redis (for production)
+//   - RATE_LIMIT_TYPE=memory (for development/testing)
+func initializeRateLimitService(cfg *config.Config, logger *logrus.Logger) (service.RateLimitService, error) {
+	// Get base rate limiting configuration
+	rateLimitConfig := service.DefaultRateLimitConfig()
+
+	switch cfg.Security.RateLimitType {
+	case "redis":
+		// Create Redis client
+		redisClient := redis.NewClient(&redis.Options{
+			Addr:         fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+			Password:     cfg.Redis.Password,
+			DB:           cfg.Redis.DB,
+			MaxRetries:   cfg.Redis.MaxRetries,
+			PoolSize:     cfg.Redis.PoolSize,
+			MinIdleConns: cfg.Redis.MinIdleConns,
+		})
+
+		// Test Redis connection
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := redisClient.Ping(ctx).Err(); err != nil {
+			redisClient.Close()
+			return nil, fmt.Errorf("failed to connect to Redis at %s:%s: %w",
+				cfg.Redis.Host, cfg.Redis.Port, err)
+		}
+
+		// Create Redis rate limiting configuration
+		redisConfig := service.RedisRateLimitConfig{
+			RateLimitConfig: rateLimitConfig,
+			KeyPrefix:       "auth_service",
+			Pipeline:        true,
+			MaxRetries:      3,
+		}
+
+		logger.WithFields(logrus.Fields{
+			"type":       "redis",
+			"redis_addr": fmt.Sprintf("%s:%s", cfg.Redis.Host, cfg.Redis.Port),
+			"redis_db":   cfg.Redis.DB,
+			"key_prefix": redisConfig.KeyPrefix,
+		}).Info("Initializing Redis-based rate limiting service")
+
+		return service.NewRedisRateLimitService(redisClient, redisConfig, logger), nil
+
+	case "memory":
+		logger.WithFields(logrus.Fields{
+			"type": "memory",
+		}).Info("Initializing in-memory rate limiting service")
+
+		return service.NewInMemoryRateLimitService(rateLimitConfig, logger), nil
+
+	default:
+		return nil, fmt.Errorf("unsupported rate limit type: %s (supported: memory, redis)", cfg.Security.RateLimitType)
+	}
 }
 
 func corsMiddleware(cfg *config.Config) gin.HandlerFunc {

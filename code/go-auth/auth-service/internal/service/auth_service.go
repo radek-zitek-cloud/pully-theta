@@ -35,6 +35,14 @@ type RateLimitService interface {
 
 	// RecordPasswordResetAttempt records a password reset attempt.
 	RecordPasswordResetAttempt(ctx context.Context, identifier string) error
+
+	// GetStats returns statistics about the rate limiting service.
+	// Returns a map containing configuration, performance metrics, and operational status.
+	GetStats() map[string]interface{}
+
+	// HealthCheck verifies that the rate limiting service is healthy and operational.
+	// This includes checking connectivity to any external dependencies (e.g., Redis).
+	HealthCheck(ctx context.Context) error
 }
 
 // AuthMetricsRecorder defines the interface for recording authentication metrics.

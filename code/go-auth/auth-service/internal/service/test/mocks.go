@@ -269,6 +269,20 @@ func (m *MockRateLimitService) RecordPasswordResetAttempt(ctx context.Context, i
 	return args.Error(0)
 }
 
+// GetStats mocks returning statistics about the rate limiting service.
+// Returns a map containing configuration, performance metrics, and operational status.
+func (m *MockRateLimitService) GetStats() map[string]interface{} {
+	args := m.Called()
+	return args.Get(0).(map[string]interface{})
+}
+
+// HealthCheck mocks verifying that the rate limiting service is healthy and operational.
+// This includes checking connectivity to any external dependencies (e.g., Redis).
+func (m *MockRateLimitService) HealthCheck(ctx context.Context) error {
+	args := m.Called(ctx)
+	return args.Error(0)
+}
+
 // MockAuthMetricsRecorder provides a mock implementation of service.AuthMetricsRecorder.
 // This mock implements all methods of the AuthMetricsRecorder interface for testing
 // authentication and authorization metrics recording operations.
