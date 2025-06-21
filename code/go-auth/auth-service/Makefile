@@ -326,19 +326,25 @@ docker-push: docker-build ## Push Docker image to registry
 .PHONY: compose-up
 compose-up: ## Start all services with docker-compose
 	@echo "$(YELLOW)Starting services with docker-compose...$(NC)"
-	@export VERSION=$(VERSION) BUILD_TIME="$(BUILD_TIME)" && docker compose up -d
+	@echo "$(CYAN)VERSION=$(VERSION)$(NC)"
+	@echo "$(CYAN)DOCKER_TAG=$(DOCKER_TAG)$(NC)"
+	@export VERSION=$(DOCKER_TAG) BUILD_TIME="$(BUILD_TIME)" && docker compose up -d
 	@echo "$(GREEN)Services started. Check status with 'make compose-status'$(NC)"
 
 .PHONY: compose-build
 compose-build: ## Build services with docker-compose
 	@echo "$(YELLOW)Building services with docker-compose...$(NC)"
-	@export VERSION=$(VERSION) BUILD_TIME="$(BUILD_TIME)" && docker compose build
+	@echo "$(CYAN)VERSION=$(VERSION)$(NC)"
+	@echo "$(CYAN)DOCKER_TAG=$(DOCKER_TAG)$(NC)"
+	@export VERSION=$(DOCKER_TAG) BUILD_TIME="$(BUILD_TIME)" && docker compose build
 	@echo "$(GREEN)Services built successfully$(NC)"
 
 .PHONY: compose-up-build
 compose-up-build: ## Build and start all services with docker-compose
 	@echo "$(YELLOW)Building and starting services with docker-compose...$(NC)"
-	@export VERSION=$(VERSION) BUILD_TIME="$(BUILD_TIME)" && docker compose up -d --build
+	@echo "$(CYAN)VERSION=$(VERSION)$(NC)"
+	@echo "$(CYAN)DOCKER_TAG=$(DOCKER_TAG)$(NC)"
+	@export VERSION=$(DOCKER_TAG) BUILD_TIME="$(BUILD_TIME)" && docker compose up -d --build
 	@echo "$(GREEN)Services built and started$(NC)"
 
 .PHONY: compose-down
@@ -379,7 +385,7 @@ compose-shell: ## Open shell in auth-service container
 .PHONY: compose-test
 compose-test: ## Run tests in docker-compose environment
 	@echo "$(YELLOW)Running tests in docker-compose environment...$(NC)"
-	@export VERSION=$(VERSION) BUILD_TIME="$(BUILD_TIME)" && docker compose -f docker-compose.yml -f docker-compose.test.yml up --build --abort-on-container-exit test-runner
+	@export VERSION=$(DOCKER_TAG) BUILD_TIME="$(BUILD_TIME)" && docker compose -f docker-compose.yml -f docker-compose.test.yml up --build --abort-on-container-exit test-runner
 
 # =============================================================================
 # Cleanup Commands

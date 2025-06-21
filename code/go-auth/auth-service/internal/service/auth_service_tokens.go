@@ -31,11 +31,13 @@ import (
 // - Input validation and sanitization
 //
 // Dependencies:
+// - UserRepository: For user lookup and validation during token operations
 // - RefreshTokenRepository: For refresh token persistence
 // - Logger: For structured logging
 // - Config: For JWT configuration (secret, expiry times)
 // - AuthServiceUtils: For utility functions
 type AuthServiceTokens struct {
+	userRepo         domain.UserRepository
 	refreshTokenRepo domain.RefreshTokenRepository
 	logger           *logrus.Logger
 	config           *config.Config
@@ -46,6 +48,7 @@ type AuthServiceTokens struct {
 // This constructor validates dependencies and returns a configured service.
 //
 // Parameters:
+//   - userRepo: Repository for user operations
 //   - refreshTokenRepo: Repository for refresh token operations
 //   - logger: Structured logger for service operations
 //   - config: Service configuration containing JWT settings
@@ -57,16 +60,20 @@ type AuthServiceTokens struct {
 //
 // Example usage:
 //
-//	tokenService, err := NewAuthServiceTokens(refreshTokenRepo, logger, config, utils)
+//	tokenService, err := NewAuthServiceTokens(userRepo, refreshTokenRepo, logger, config, utils)
 //	if err != nil {
 //	    log.Fatal("Failed to create token service:", err)
 //	}
 func NewAuthServiceTokens(
+	userRepo domain.UserRepository,
 	refreshTokenRepo domain.RefreshTokenRepository,
 	logger *logrus.Logger,
 	config *config.Config,
 	utils *AuthServiceUtils,
 ) (*AuthServiceTokens, error) {
+	if userRepo == nil {
+		return nil, fmt.Errorf("user repository is required")
+	}
 	if refreshTokenRepo == nil {
 		return nil, fmt.Errorf("refresh token repository is required")
 	}
@@ -81,6 +88,7 @@ func NewAuthServiceTokens(
 	}
 
 	return &AuthServiceTokens{
+		userRepo:         userRepo,
 		refreshTokenRepo: refreshTokenRepo,
 		logger:           logger,
 		config:           config,
@@ -98,9 +106,16 @@ func NewAuthServiceTokens(
 // - Both tokens use HMAC-SHA256 signing
 // - Tokens include security claims (iss, aud, exp, iat, nbf)
 //
+// Security considerations:
+// - IP address and device info are stored for audit and security monitoring
+// - IP address defaults to "127.0.0.1" if empty to satisfy database constraints
+// - Device info defaults to "Unknown" if empty for better tracking
+//
 // Parameters:
 //   - ctx: Context for cancellation and timeouts
 //   - user: User entity for whom to generate tokens
+//   - clientIP: Client IP address for security tracking (required for database)
+//   - userAgent: Client user agent string for device identification
 //
 // Returns:
 //   - AuthResponse containing both tokens and user data
@@ -115,12 +130,25 @@ func NewAuthServiceTokens(
 //
 // Example usage:
 //
-//	authResponse, err := tokenService.GenerateTokenPair(ctx, user)
+//	authResponse, err := tokenService.GenerateTokenPair(ctx, user, "192.168.1.1", "Mozilla/5.0...")
 //	if err != nil {
 //	    return fmt.Errorf("failed to generate tokens: %w", err)
 //	}
-func (s *AuthServiceTokens) GenerateTokenPair(ctx context.Context, user *domain.User) (*domain.AuthResponse, error) {
+func (s *AuthServiceTokens) GenerateTokenPair(ctx context.Context, user *domain.User, clientIP, userAgent string) (*domain.AuthResponse, error) {
 	s.logger.WithField("user_id", user.ID).Debug("Generating token pair")
+
+	// Validate and sanitize input parameters for database constraints
+	// IP address cannot be empty for INET field - use localhost as fallback
+	if clientIP == "" {
+		clientIP = "127.0.0.1"
+		s.logger.WithField("user_id", user.ID).Warn("Empty client IP provided, using localhost as fallback")
+	}
+
+	// Device info cannot be empty - use a meaningful default
+	if userAgent == "" {
+		userAgent = "Unknown"
+		s.logger.WithField("user_id", user.ID).Warn("Empty user agent provided, using default")
+	}
 
 	// Generate access token
 	accessToken, err := s.generateAccessToken(user)
@@ -136,19 +164,24 @@ func (s *AuthServiceTokens) GenerateTokenPair(ctx context.Context, user *domain.
 		return nil, fmt.Errorf("failed to generate refresh token: %w", err)
 	}
 
-	// Create refresh token entity for database storage
+	// Create refresh token entity for database storage with required fields
 	refreshTokenEntity := &domain.RefreshToken{
-		ID:        uuid.New(),
-		UserID:    user.ID,
-		Token:     refreshToken,
-		ExpiresAt: time.Now().UTC().Add(s.config.JWT.RefreshTokenExpiry),
-		CreatedAt: time.Now().UTC(),
-		UpdatedAt: time.Now().UTC(),
+		ID:         uuid.New(),
+		UserID:     user.ID,
+		Token:      refreshToken,
+		DeviceInfo: userAgent, // Store user agent for device tracking
+		IPAddress:  clientIP,  // Store IP address for security auditing
+		ExpiresAt:  time.Now().UTC().Add(s.config.JWT.RefreshTokenExpiry),
+		CreatedAt:  time.Now().UTC(),
+		UpdatedAt:  time.Now().UTC(),
 	}
 
 	// Store refresh token in database
 	if _, err := s.refreshTokenRepo.Create(ctx, refreshTokenEntity); err != nil {
-		s.logger.WithError(err).Error("Failed to store refresh token")
+		s.logger.WithError(err).WithFields(logrus.Fields{
+			"user_id":   user.ID,
+			"client_ip": clientIP,
+		}).Error("Failed to store refresh token")
 		return nil, fmt.Errorf("failed to store refresh token: %w", err)
 	}
 
@@ -161,7 +194,10 @@ func (s *AuthServiceTokens) GenerateTokenPair(ctx context.Context, user *domain.
 		User:         domain.ToUserResponse(user),
 	}
 
-	s.logger.WithField("user_id", user.ID).Info("Token pair generated successfully")
+	s.logger.WithFields(logrus.Fields{
+		"user_id":   user.ID,
+		"client_ip": clientIP,
+	}).Info("Token pair generated successfully")
 
 	return authResponse, nil
 }
@@ -246,7 +282,7 @@ func (s *AuthServiceTokens) RefreshToken(ctx context.Context, req *domain.Refres
 	}
 
 	// Generate new token pair
-	authResponse, err := s.GenerateTokenPair(ctx, user)
+	authResponse, err := s.GenerateTokenPair(ctx, user, clientIP, userAgent)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to generate new token pair")
 		s.utils.auditLogFailure(ctx, &tokenEntity.UserID, "token_refresh", "Token generation failed", clientIP, userAgent, err)
@@ -286,13 +322,15 @@ func (s *AuthServiceTokens) generateAccessToken(user *domain.User) (string, erro
 	now := time.Now().UTC()
 
 	claims := jwt.MapClaims{
-		"sub":   user.ID.String(),
-		"email": user.Email,
-		"iss":   s.config.JWT.Issuer,
-		"aud":   s.config.JWT.Issuer, // Use issuer as audience for now
-		"exp":   now.Add(s.config.JWT.AccessTokenExpiry).Unix(),
-		"iat":   now.Unix(),
-		"nbf":   now.Unix(),
+		"user_id":    user.ID,          // Required for JWT service validation (as UUID)
+		"sub":        user.ID.String(), // Standard subject claim (as string)
+		"email":      user.Email,
+		"token_type": "access", // Required for token type validation
+		"iss":        s.config.JWT.Issuer,
+		"aud":        s.config.JWT.Issuer, // Use issuer as audience for now
+		"exp":        now.Add(s.config.JWT.AccessTokenExpiry).Unix(),
+		"iat":        now.Unix(),
+		"nbf":        now.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -330,14 +368,15 @@ func (s *AuthServiceTokens) generateRefreshToken(user *domain.User) (string, err
 	now := time.Now().UTC()
 
 	claims := jwt.MapClaims{
-		"sub":   user.ID.String(),
-		"email": user.Email,
-		"type":  "refresh",
-		"iss":   s.config.JWT.Issuer,
-		"aud":   s.config.JWT.Issuer, // Use issuer as audience for now
-		"exp":   now.Add(s.config.JWT.RefreshTokenExpiry).Unix(),
-		"iat":   now.Unix(),
-		"nbf":   now.Unix(),
+		"user_id":    user.ID,          // Required for JWT service validation (as UUID)
+		"sub":        user.ID.String(), // Standard subject claim (as string)
+		"email":      user.Email,
+		"token_type": "refresh", // Use consistent token_type field
+		"iss":        s.config.JWT.Issuer,
+		"aud":        s.config.JWT.Issuer, // Use issuer as audience for now
+		"exp":        now.Add(s.config.JWT.RefreshTokenExpiry).Unix(),
+		"iat":        now.Unix(),
+		"nbf":        now.Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -368,7 +407,35 @@ func (s *AuthServiceTokens) generateRefreshToken(user *domain.User) (string, err
 // Time Complexity: O(1) with proper database indexing
 // Space Complexity: O(1)
 func (s *AuthServiceTokens) getUserForToken(ctx context.Context, userID uuid.UUID) (*domain.User, error) {
-	// This would need to be implemented using the user repository
-	// For now, return an error indicating the dependency is needed
-	return nil, fmt.Errorf("user repository dependency needed for getUserForToken")
+	// Validate input
+	if userID == uuid.Nil {
+		return nil, fmt.Errorf("invalid user ID: cannot be nil")
+	}
+
+	// Retrieve user from repository
+	user, err := s.userRepo.GetByID(ctx, userID)
+	if err != nil {
+		// Log the error for debugging but don't expose internal details
+		s.logger.WithError(err).WithField("user_id", userID).
+			Warn("Failed to retrieve user for token operation")
+
+		// Return a generic user not found error
+		return nil, domain.ErrUserNotFound
+	}
+
+	// Validate user state for token operations
+	if user.DeletedAt != nil {
+		s.logger.WithField("user_id", userID).
+			Warn("Token operation attempted on deleted user account")
+		return nil, domain.ErrAccountDeleted
+	}
+
+	// Check if user account is active
+	if !user.IsActive {
+		s.logger.WithField("user_id", userID).
+			Warn("Token operation attempted on inactive user account")
+		return nil, domain.ErrAccountInactive
+	}
+
+	return user, nil
 }

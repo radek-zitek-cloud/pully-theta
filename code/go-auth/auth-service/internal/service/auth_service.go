@@ -190,7 +190,7 @@ func NewAuthService(
 		return nil, fmt.Errorf("failed to create auth service core: %w", err)
 	}
 
-	tokens, err := NewAuthServiceTokens(refreshTokenRepo, logger, config, utils)
+	tokens, err := NewAuthServiceTokens(userRepo, refreshTokenRepo, logger, config, utils)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create auth service tokens: %w", err)
 	}

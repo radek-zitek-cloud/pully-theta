@@ -369,10 +369,14 @@ func (u *AuthServiceUtils) auditLogFailure(ctx context.Context, userID *uuid.UUI
 // Time Complexity: O(1) with proper database indexing
 // Space Complexity: O(1)
 func (u *AuthServiceUtils) auditLog(ctx context.Context, userID *uuid.UUID, eventType, description, clientIP, userAgent string, success bool, err error) {
+	// Format the event type to match database constraint: [component].[action].[result]
+	// Database constraint: event_type ~ '^[a-z]+(\.[a-z]+)*\.(success|failure|info)$'
+	formattedEventType := u.formatEventType(eventType, success)
+
 	auditLog := &domain.AuditLog{
 		ID:               uuid.New(),
 		UserID:           userID,
-		EventType:        eventType,
+		EventType:        formattedEventType,
 		EventDescription: description,
 		IPAddress:        clientIP,
 		UserAgent:        userAgent,
@@ -395,11 +399,76 @@ func (u *AuthServiceUtils) auditLog(ctx context.Context, userID *uuid.UUID, even
 
 		if _, logErr := u.auditRepo.Create(auditCtx, auditLog); logErr != nil {
 			u.logger.WithError(logErr).WithFields(logrus.Fields{
-				"audit_id":    auditLog.ID,
-				"event_type":  eventType,
-				"user_id":     userID,
-				"description": description,
+				"audit_id":       auditLog.ID,
+				"event_type":     eventType,
+				"formatted_type": formattedEventType,
+				"user_id":        userID,
+				"description":    description,
 			}).Error("Failed to create audit log entry")
 		}
 	}()
+}
+
+// formatEventType formats event types to match the database constraint pattern.
+// Database constraint: event_type ~ '^[a-z]+(\.[a-z]+)*\.(success|failure|info)$'
+//
+// This method transforms simple event names into the required format:
+// - "login" → "user.login.success" or "user.login.failure"
+// - "registration" → "user.registration.success" or "user.registration.failure"
+// - "logout" → "user.logout.success" or "user.logout.failure"
+// - "logout_all" → "user.logout.all.success" or "user.logout.all.failure"
+// - "token_refresh" → "token.refresh.success" or "token.refresh.failure"
+// - "password_change" → "user.password.change.success" or "user.password.change.failure"
+// - "password_reset_request" → "user.password.reset.request.success" or "user.password.reset.request.failure"
+// - "password_reset_complete" → "user.password.reset.complete.success" or "user.password.reset.complete.failure"
+//
+// All event types are converted to comply with the database constraint:
+// ^[a-z]+(\.[a-z]+)*\.(success|failure|info)$ (only lowercase letters and dots allowed)
+//
+// Parameters:
+//   - eventType: The base event type (e.g., "login", "registration", "logout")
+//   - success: Whether the operation was successful
+//
+// Returns:
+//   - Formatted event type string matching database constraint
+//
+// Time Complexity: O(1)
+// Space Complexity: O(1)
+func (u *AuthServiceUtils) formatEventType(eventType string, success bool) string {
+	// Determine the result suffix
+	result := "failure"
+	if success {
+		result = "success"
+	}
+
+	// Map event types to their proper component.action format
+	// All event types must comply with database constraint: ^[a-z]+(\.[a-z]+)*\.(success|failure|info)$
+	// This means only lowercase letters and dots are allowed, no underscores
+	switch eventType {
+	case "login":
+		return "user.login." + result
+	case "registration":
+		return "user.registration." + result
+	case "logout":
+		return "user.logout." + result
+	case "logout_all":
+		// Use dot notation instead of underscore to comply with database constraint
+		return "user.logout.all." + result
+	case "token_refresh":
+		return "token.refresh." + result
+	case "password_change":
+		// Convert underscore to dot notation for database compliance
+		return "user.password.change." + result
+	case "password_reset_request":
+		// Convert underscores to dot notation for database compliance
+		return "user.password.reset.request." + result
+	case "password_reset_complete":
+		// Convert underscores to dot notation for database compliance
+		return "user.password.reset.complete." + result
+	default:
+		// For unknown event types, assume they are user-related and use them as-is
+		// Convert any underscores to dots to maintain database constraint compliance
+		cleanEventType := strings.ReplaceAll(eventType, "_", ".")
+		return "user." + cleanEventType + "." + result
+	}
 }

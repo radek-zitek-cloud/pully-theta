@@ -385,7 +385,7 @@ func (s *AuthServiceCore) Login(ctx context.Context, req *domain.LoginRequest, c
 	}
 
 	// Create tokens using the token service
-	tokenService, err := NewAuthServiceTokens(s.refreshTokenRepo, s.logger, s.config, s.utils)
+	tokenService, err := NewAuthServiceTokens(s.userRepo, s.refreshTokenRepo, s.logger, s.config, s.utils)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to create token service")
 		s.utils.auditLogFailure(ctx, &user.ID, "login", "Token service creation failed", clientIP, userAgent, err)
@@ -393,7 +393,7 @@ func (s *AuthServiceCore) Login(ctx context.Context, req *domain.LoginRequest, c
 		return nil, fmt.Errorf("failed to create token service: %w", err)
 	}
 
-	authResponse, err := tokenService.GenerateTokenPair(ctx, user)
+	authResponse, err := tokenService.GenerateTokenPair(ctx, user, clientIP, userAgent)
 	if err != nil {
 		s.logger.WithError(err).Error("Failed to generate tokens")
 		s.utils.auditLogFailure(ctx, &user.ID, "login", "Token generation failed", clientIP, userAgent, err)
